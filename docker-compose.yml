@@ -1,0 +1,47 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: oci-redis
+    command: redis-server --save "" --appendonly no
+    restart: unless-stopped
+    networks:
+      - oci-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: oci-backend
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - REFRESH_INTERVAL_SECONDS=600
+      - CACHE_TTL_SECONDS=900
+      - OCI_CONFIG_FILE=/root/.oci/config
+      - OCI_CONFIG_PROFILE=DEFAULT
+    volumes:
+      - ${HOME}/.oci:/root/.oci:ro
+      - ${HOME}/.ssh:/root/.ssh:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    networks:
+      - oci-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: oci-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - oci-net
+
+networks:
+  oci-net:
+    driver: bridge
