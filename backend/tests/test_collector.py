@@ -46,6 +46,48 @@ def test_block_storage_and_orphan_detection(sample_volumes_and_attachments):
     assert "ocid1.volume.oc1..blk2_orphan" in orphan_ids
 
 
+def test_terminated_volumes_are_ignored_and_not_marked_orphan():
+    """
+    Test that volumes with lifecycle_state == 'TERMINATED' or 'TERMINATING'
+    are completely excluded from quota calculation and never marked as orphan disks.
+    """
+    from app.services.oci_collector import process_block_storage_inventory
+
+    # 1 Available attached boot volume (50 GB)
+    bv_active = MagicMock(id="bv_act", size_in_gbs=50, lifecycle_state="AVAILABLE", display_name="active-bv")
+    # 2 Terminated boot volumes (50 GB each)
+    bv_term1 = MagicMock(id="bv_term1", size_in_gbs=50, lifecycle_state="TERMINATED", display_name="terminated-bv1")
+    bv_term2 = MagicMock(id="bv_term2", size_in_gbs=50, lifecycle_state="TERMINATING", display_name="terminating-bv2")
+
+    # 1 Available detached block volume (50 GB) -> REAL ORPHAN
+    blk_orphan = MagicMock(id="blk_orph", size_in_gbs=50, lifecycle_state="AVAILABLE", display_name="orphan-blk")
+    # 1 Terminated block volume (50 GB)
+    blk_term = MagicMock(id="blk_term", size_in_gbs=50, lifecycle_state="TERMINATED", display_name="terminated-blk")
+
+    # Attachment for active boot volume
+    att = MagicMock(boot_volume_id="bv_act", lifecycle_state="ATTACHED", instance_id="inst1")
+
+    result = process_block_storage_inventory(
+        boot_volumes=[bv_active, bv_term1, bv_term2],
+        block_volumes=[blk_orphan, blk_term],
+        boot_attachments=[att],
+        volume_attachments=[],
+    )
+
+    # Only active volumes should be counted: bv_active (50 GB) + blk_orphan (50 GB) = 100 GB
+    assert result["total_allocated_gb"] == 100
+    assert result["boot_volumes_count"] == 1
+    assert result["block_volumes_count"] == 1
+    # Only 1 orphan disk (blk_orphan)
+    assert result["orphan_volumes_count"] == 1
+    assert result["orphan_wasted_gb"] == 50
+    orphan_ids = [v["id"] for v in result["orphan_volumes"]]
+    assert orphan_ids == ["blk_orph"]
+    assert "bv_term1" not in orphan_ids
+    assert "bv_term2" not in orphan_ids
+    assert "blk_term" not in orphan_ids
+
+
 def test_compute_instances_aggregation(sample_compute_instances):
     """
     Test compute aggregation for Ampere A1 (Arm) and AMD Micro.

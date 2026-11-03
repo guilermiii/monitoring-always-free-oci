@@ -98,4 +98,5 @@ class VolumeDetail(BaseModel):
     compartment_name: Optional[str] = None
     is_orphan: bool
     attached_instance_id: Optional[str] = None
+    lifecycle_state: Optional[str] = "AVAILABLE"
     time_created: Optional[str] = None

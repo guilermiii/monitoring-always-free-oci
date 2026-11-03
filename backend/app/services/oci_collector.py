@@ -7,6 +7,9 @@ from typing import List, Dict, Any, Tuple, Optional
 logger = logging.getLogger(__name__)
 
 
+ACTIVE_VOLUME_STATES = {"AVAILABLE", "PROVISIONING", "RESTORING"}
+
+
 def get_status_color(percentage: float) -> str:
     """Returns 'safe', 'warning', or 'danger' according to threshold."""
     if percentage >= 90.0:
@@ -30,10 +33,22 @@ def process_block_storage_inventory(
 ) -> Dict[str, Any]:
     """
     Sums total block storage and detects orphan volumes.
-    A volume is orphan if it has no active attachment to a running instance.
+    A volume is orphan if it is ACTIVE (AVAILABLE/PROVISIONING/RESTORING)
+    and has no active attachment to a running instance.
+    Terminated/terminating volumes do not consume quota and are ignored.
     """
     if compartment_map is None:
         compartment_map = {}
+
+    # Filter out terminated or terminating volumes (they do not consume quota)
+    active_boot_volumes = [
+        bv for bv in boot_volumes
+        if getattr(bv, "lifecycle_state", "AVAILABLE") in ACTIVE_VOLUME_STATES
+    ]
+    active_block_volumes = [
+        blk for blk in block_volumes
+        if getattr(blk, "lifecycle_state", "AVAILABLE") in ACTIVE_VOLUME_STATES
+    ]
 
     # Map of attached boot volume IDs
     attached_boot_ids = {
@@ -53,8 +68,8 @@ def process_block_storage_inventory(
     orphan_volumes = []
     all_volumes_detail = []
 
-    # Process boot volumes
-    for bv in boot_volumes:
+    # Process active boot volumes
+    for bv in active_boot_volumes:
         size = getattr(bv, "size_in_gbs", 0) or 0
         total_allocated_gb += size
         is_orphan = bv.id not in attached_boot_ids
@@ -74,6 +89,7 @@ def process_block_storage_inventory(
             "compartment_name": compartment_map.get(getattr(bv, "compartment_id", ""), "root"),
             "is_orphan": is_orphan,
             "attached_instance_id": attached_instance,
+            "lifecycle_state": getattr(bv, "lifecycle_state", "AVAILABLE"),
             "time_created": str(getattr(bv, "time_created", "")),
         }
         all_volumes_detail.append(vol_info)
@@ -82,8 +98,8 @@ def process_block_storage_inventory(
             orphan_wasted_gb += size
             orphan_volumes.append(vol_info)
 
-    # Process block volumes
-    for blk in block_volumes:
+    # Process active block volumes
+    for blk in active_block_volumes:
         size = getattr(blk, "size_in_gbs", 0) or 0
         total_allocated_gb += size
         is_orphan = blk.id not in attached_block_ids
@@ -102,6 +118,7 @@ def process_block_storage_inventory(
             "compartment_name": compartment_map.get(getattr(blk, "compartment_id", ""), "root"),
             "is_orphan": is_orphan,
             "attached_instance_id": attached_instance,
+            "lifecycle_state": getattr(blk, "lifecycle_state", "AVAILABLE"),
             "time_created": str(getattr(blk, "time_created", "")),
         }
         all_volumes_detail.append(vol_info)
@@ -120,8 +137,8 @@ def process_block_storage_inventory(
         "status": get_status_color(percentage),
         "orphan_volumes_count": len(orphan_volumes),
         "orphan_wasted_gb": orphan_wasted_gb,
-        "boot_volumes_count": len(boot_volumes),
-        "block_volumes_count": len(block_volumes),
+        "boot_volumes_count": len(active_boot_volumes),
+        "block_volumes_count": len(active_block_volumes),
         "orphan_volumes": orphan_volumes,
         "all_volumes": all_volumes_detail,
     }
