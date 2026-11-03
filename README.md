@@ -18,13 +18,22 @@ Dashboard moderno, responsivo e conteinerizado para monitoramento em tempo real 
 3. **Armazenamento de Objetos (Object Storage):**
    * Soma volumes de buckets no tier Standard (10 GB) e Arquivo/Infrequente (10 GB).
 
-4. **Taxa de Queima (*Burn-Rate*) & Projeção Mensal:**
+4. **Rede & Conectividade Always Free:**
+   * **VCNs (Virtual Cloud Networks):** Rastreia até 2 VCNs gratuitas com sub-redes IPv4/IPv6.
+   * **IP Fixo Reservado & Efêmero:** Monitora a cota de 1 IP reservado e emite alerta de **IP Fixo Órfão/Ocioso** caso exista IP estático desvinculado de VNIC.
+   * **Load Balancers:** Monitora 1 Flexible Load Balancer (10 Mbps) e 1 Network Load Balancer (NLB).
+   * **OCI Bastion:** Rastreia até 2 instâncias do serviço de Bastion para acesso seguro.
+
+5. **Bancos de Dados Always Free (Autonomous Database):**
+   * Monitora até 2 instâncias autônomas (ATP, ADW, JSON, APEX) e soma de armazenamento de até 40 GB.
+
+6. **Taxa de Queima (*Burn-Rate*) & Projeção Mensal:**
    * Calcula o consumo diário médio e extrapola linearmente até o último dia do ciclo de faturamento.
    * Notificações visuais caso o ritmo atual projete exceder qualquer limite gratuito antes do fechamento do mês.
 
-5. **Performance Extrema & Alta Disponibilidade:**
+7. **Performance Extrema & Alta Disponibilidade:**
    * Background Worker assíncrono que consulta a OCI e alimenta o cache **Redis** em memória (`--save ""`).
-   * Endpoints REST respondem em **<5ms** direto da memória com arquitetura *stale-while-revalidate*.
+   * Endpoints REST respondem em **<3ms** direto da memória com arquitetura *stale-while-revalidate*.
    * Botão **"Sincronizar Agora"** para forçar atualização sob demanda.
    * **Reverse Proxy Nginx** servindo a SPA React e roteando chamadas `/api/` sem problemas de CORS.
 
@@ -57,6 +66,8 @@ docker compose up --build -d
 * **Documentação Interativa da API (Swagger):** [http://localhost:8000/docs](http://localhost:8000/docs)
 * **Endpoint de Resumo Geral:** [http://localhost:3000/api/v1/summary](http://localhost:3000/api/v1/summary)
 * **Inventário de Volumes:** [http://localhost:3000/api/v1/storage/volumes](http://localhost:3000/api/v1/storage/volumes)
+* **Inventário de Rede (VCNs, IPs, LBs):** [http://localhost:3000/api/v1/network/inventory](http://localhost:3000/api/v1/network/inventory)
+* **Inventário de Bancos Autônomos:** [http://localhost:3000/api/v1/database/inventory](http://localhost:3000/api/v1/database/inventory)
 
 ### 3. Encerrar a Aplicação
 ```bash

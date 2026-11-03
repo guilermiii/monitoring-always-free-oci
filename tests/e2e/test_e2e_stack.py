@@ -47,6 +47,27 @@ async def test_e2e_backend_direct_summary():
                 data = response.json()
                 assert "storage" in data
                 assert "compute" in data
+                assert "networking" in data
+                assert "database" in data
                 assert "burn_rate" in data
         except httpx.ConnectError:
             pytest.skip(f"Backend not reachable at {BACKEND_URL}")
+
+
+@pytest.mark.asyncio
+async def test_e2e_network_and_database_inventory():
+    """Verify proxy routing for network and database inventory endpoints."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            net_resp = await client.get(f"{FRONTEND_URL}/api/v1/network/inventory")
+            assert net_resp.status_code in [200, 503]
+            if net_resp.status_code == 200:
+                net_data = net_resp.json()
+                assert "vcns" in net_data
+                assert "public_ips" in net_data
+                assert "load_balancers" in net_data
+
+            db_resp = await client.get(f"{FRONTEND_URL}/api/v1/database/inventory")
+            assert db_resp.status_code in [200, 503]
+        except httpx.ConnectError:
+            pytest.skip(f"Frontend proxy not reachable at {FRONTEND_URL}")
