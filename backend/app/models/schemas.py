@@ -71,6 +71,57 @@ class NetworkSummary(BaseModel):
     status: str = "safe"
 
 
+class VcnSummary(BaseModel):
+    active_vcns: int
+    limit_vcns: int = 2
+    percentage: float
+    status: str = "safe"
+
+
+class PublicIpSummary(BaseModel):
+    reserved_count: int
+    reserved_limit: int = 1
+    unassigned_reserved_count: int
+    ephemeral_count: int
+    percentage: float
+    status: str = "safe"
+
+
+class LoadBalancerSummary(BaseModel):
+    flexible_lb_count: int
+    limit_flexible_lb: int = 1
+    nlb_count: int
+    limit_nlb: int = 1
+    status: str = "safe"
+
+
+class BastionSummary(BaseModel):
+    active_bastions: int
+    limit_bastions: int = 2
+    status: str = "safe"
+
+
+class NetworkingFullSummary(BaseModel):
+    vcn: VcnSummary
+    public_ip: PublicIpSummary
+    load_balancer: LoadBalancerSummary
+    bastion: BastionSummary
+    egress: NetworkSummary
+
+
+class AutonomousDatabaseSummary(BaseModel):
+    active_count: int
+    limit_count: int = 2
+    allocated_storage_gb: float
+    limit_storage_gb: float = 40.0
+    percentage: float
+    status: str = "safe"
+
+
+class DatabaseSummary(BaseModel):
+    autonomous_database: AutonomousDatabaseSummary
+
+
 class BurnRateSummary(BaseModel):
     days_elapsed: int
     days_in_month: int
@@ -86,6 +137,8 @@ class SummaryResponse(BaseModel):
     storage: StorageSummary
     compute: ComputeSummary
     network: NetworkSummary
+    networking: Optional[NetworkingFullSummary] = None
+    database: Optional[DatabaseSummary] = None
     burn_rate: BurnRateSummary
 
 
@@ -100,3 +153,50 @@ class VolumeDetail(BaseModel):
     attached_instance_id: Optional[str] = None
     lifecycle_state: Optional[str] = "AVAILABLE"
     time_created: Optional[str] = None
+
+
+class VcnDetail(BaseModel):
+    id: str
+    display_name: str
+    cidr_block: Optional[str] = None
+    compartment_id: Optional[str] = None
+    compartment_name: Optional[str] = None
+    lifecycle_state: str = "AVAILABLE"
+    time_created: Optional[str] = None
+
+
+class PublicIpDetail(BaseModel):
+    id: str
+    ip_address: str
+    display_name: str
+    lifetime: str  # "RESERVED" | "EPHEMERAL"
+    is_unassigned: bool
+    assigned_entity_id: Optional[str] = None
+    assigned_entity_type: Optional[str] = None
+    compartment_id: Optional[str] = None
+    compartment_name: Optional[str] = None
+    lifecycle_state: str = "AVAILABLE"
+
+
+class LoadBalancerDetail(BaseModel):
+    id: str
+    display_name: str
+    lb_type: str  # "flexible" | "network"
+    shape_name: str
+    ip_addresses: List[str] = Field(default_factory=list)
+    compartment_id: Optional[str] = None
+    compartment_name: Optional[str] = None
+    lifecycle_state: str = "ACTIVE"
+
+
+class DatabaseDetail(BaseModel):
+    id: str
+    display_name: str
+    db_name: str
+    is_free_tier: bool
+    cpu_core_count: int
+    data_storage_size_in_gbs: int
+    db_workload: str
+    compartment_id: Optional[str] = None
+    compartment_name: Optional[str] = None
+    lifecycle_state: str = "AVAILABLE"

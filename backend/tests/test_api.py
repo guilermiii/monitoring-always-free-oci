@@ -155,3 +155,44 @@ async def test_get_storage_volumes_endpoint(mock_redis, mock_volumes_data):
             orphans = [v for v in data if v["is_orphan"]]
             assert len(orphans) == 1
             assert orphans[0]["id"] == "ocid1.bootvolume.oc1..bv2_orphan"
+
+
+@pytest.mark.asyncio
+async def test_get_network_inventory_endpoint(mock_redis):
+    """Test GET /api/v1/network/inventory returns VCNs, Public IPs and LBs."""
+    from app.main import app
+
+    sample_net = {
+        "vcns": [{"id": "vcn1", "display_name": "prod-vcn", "cidr_block": "10.0.0.0/16"}],
+        "public_ips": [{"id": "ip1", "ip_address": "129.148.1.10", "is_unassigned": False}],
+        "unassigned_ips": [],
+        "load_balancers": [{"id": "lb1", "display_name": "web-alb", "lb_type": "flexible"}],
+    }
+    await mock_redis.set("oci:free_tier:network", json.dumps(sample_net))
+
+    with patch("app.services.cache.get_redis_client", return_value=mock_redis):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.get("/api/v1/network/inventory")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data["vcns"]) == 1
+            assert data["vcns"][0]["display_name"] == "prod-vcn"
+
+
+@pytest.mark.asyncio
+async def test_get_database_inventory_endpoint(mock_redis):
+    """Test GET /api/v1/database/inventory returns list of Autonomous DBs."""
+    from app.main import app
+
+    sample_dbs = [
+        {"id": "db1", "display_name": "app-db", "db_name": "appdb", "is_free_tier": True, "cpu_core_count": 1, "data_storage_size_in_gbs": 20, "db_workload": "OLTP", "lifecycle_state": "AVAILABLE"}
+    ]
+    await mock_redis.set("oci:free_tier:database", json.dumps(sample_dbs))
+
+    with patch("app.services.cache.get_redis_client", return_value=mock_redis):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.get("/api/v1/database/inventory")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]["db_name"] == "appdb"

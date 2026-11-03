@@ -7,6 +7,8 @@ logger = logging.getLogger(__name__)
 
 KEY_SUMMARY = "oci:free_tier:summary"
 KEY_VOLUMES = "oci:free_tier:volumes"
+KEY_NETWORK = "oci:free_tier:network"
+KEY_DATABASE = "oci:free_tier:database"
 KEY_STALE_BACKUP = "oci:free_tier:summary:backup"
 
 _redis_client = None
@@ -79,4 +81,48 @@ async def set_cached_volumes(data: List[Dict[str, Any]], ttl: int = CACHE_TTL_SE
         return True
     except Exception as e:
         logger.error(f"Error saving volumes to Redis: {e}")
+        return False
+
+
+async def get_cached_network() -> Optional[Dict[str, Any]]:
+    try:
+        client = get_redis_client()
+        raw = await client.get(KEY_NETWORK)
+        if raw:
+            return json.loads(raw)
+    except Exception as e:
+        logger.error(f"Error reading network inventory from Redis: {e}")
+    return None
+
+
+async def set_cached_network(data: Dict[str, Any], ttl: int = CACHE_TTL_SECONDS) -> bool:
+    try:
+        client = get_redis_client()
+        raw = json.dumps(data)
+        await client.set(KEY_NETWORK, raw, ex=ttl)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving network inventory to Redis: {e}")
+        return False
+
+
+async def get_cached_database() -> Optional[List[Dict[str, Any]]]:
+    try:
+        client = get_redis_client()
+        raw = await client.get(KEY_DATABASE)
+        if raw:
+            return json.loads(raw)
+    except Exception as e:
+        logger.error(f"Error reading database inventory from Redis: {e}")
+    return None
+
+
+async def set_cached_database(data: List[Dict[str, Any]], ttl: int = CACHE_TTL_SECONDS) -> bool:
+    try:
+        client = get_redis_client()
+        raw = json.dumps(data)
+        await client.set(KEY_DATABASE, raw, ex=ttl)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving database inventory to Redis: {e}")
         return False

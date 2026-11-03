@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 
 
 ACTIVE_VOLUME_STATES = {"AVAILABLE", "PROVISIONING", "RESTORING"}
+ACTIVE_NETWORK_STATES = {"AVAILABLE", "PROVISIONING"}
+ACTIVE_LB_STATES = {"ACTIVE", "PROVISIONING", "CREATING"}
+ACTIVE_DB_STATES = {"AVAILABLE", "PROVISIONING", "UPDATING", "STOPPED"}
+ACTIVE_BASTION_STATES = {"ACTIVE", "CREATING", "UPDATING"}
 
 
 def get_status_color(percentage: float) -> str:
@@ -232,6 +236,224 @@ def process_object_storage_inventory(buckets: List[Any]) -> Dict[str, Any]:
     }
 
 
+def process_vcn_inventory(
+    vcns: List[Any],
+    compartment_map: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """Filters active VCNs and calculates quota (limit: 2 VCNs)."""
+    active_vcns = [
+        v for v in vcns
+        if getattr(v, "lifecycle_state", "AVAILABLE") in ACTIVE_NETWORK_STATES
+    ]
+    count = len(active_vcns)
+    limit = 2
+    pct = round((count / limit) * 100, 2) if limit else 0.0
+
+    details = [
+        {
+            "id": getattr(v, "id", ""),
+            "display_name": getattr(v, "display_name", "VCN"),
+            "cidr_block": getattr(v, "cidr_block", None),
+            "compartment_id": getattr(v, "compartment_id", None),
+            "compartment_name": (compartment_map or {}).get(getattr(v, "compartment_id", ""), "root"),
+            "lifecycle_state": getattr(v, "lifecycle_state", "AVAILABLE"),
+            "time_created": str(getattr(v, "time_created", "")),
+        }
+        for v in active_vcns
+    ]
+
+    return {
+        "active_vcns": count,
+        "limit_vcns": limit,
+        "percentage": pct,
+        "status": get_status_color(pct),
+        "vcns_detail": details,
+    }
+
+
+def process_public_ip_inventory(
+    public_ips: List[Any],
+    compartment_map: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Categorizes reserved vs ephemeral public IPs.
+    Detects unassigned (orphan) reserved IPs that consume quota without active usage.
+    """
+    active_ips = [
+        ip for ip in public_ips
+        if getattr(ip, "lifecycle_state", "AVAILABLE") in ACTIVE_NETWORK_STATES
+    ]
+    reserved_ips = [ip for ip in active_ips if getattr(ip, "lifetime", "RESERVED") == "RESERVED"]
+    ephemeral_ips = [ip for ip in active_ips if getattr(ip, "lifetime", "") == "EPHEMERAL"]
+
+    # Unassigned (orphan) reserved IPs: assigned_entity_id is None
+    unassigned_reserved = [
+        ip for ip in reserved_ips
+        if not getattr(ip, "assigned_entity_id", None)
+    ]
+
+    reserved_count = len(reserved_ips)
+    reserved_limit = 1
+    pct = round((reserved_count / reserved_limit) * 100, 2) if reserved_limit else 0.0
+
+    all_ips_detail = [
+        {
+            "id": getattr(ip, "id", ""),
+            "ip_address": getattr(ip, "ip_address", ""),
+            "display_name": getattr(ip, "display_name", "Public IP"),
+            "lifetime": getattr(ip, "lifetime", "RESERVED"),
+            "is_unassigned": getattr(ip, "lifetime", "") == "RESERVED" and not getattr(ip, "assigned_entity_id", None),
+            "assigned_entity_id": getattr(ip, "assigned_entity_id", None),
+            "assigned_entity_type": getattr(ip, "assigned_entity_type", None),
+            "compartment_id": getattr(ip, "compartment_id", None),
+            "compartment_name": (compartment_map or {}).get(getattr(ip, "compartment_id", ""), "root"),
+            "lifecycle_state": getattr(ip, "lifecycle_state", "AVAILABLE"),
+        }
+        for ip in active_ips
+    ]
+
+    unassigned_detail = [ip for ip in all_ips_detail if ip["is_unassigned"]]
+
+    return {
+        "reserved_count": reserved_count,
+        "reserved_limit": reserved_limit,
+        "unassigned_reserved_count": len(unassigned_reserved),
+        "ephemeral_count": len(ephemeral_ips),
+        "percentage": pct,
+        "status": get_status_color(pct),
+        "all_ips": all_ips_detail,
+        "unassigned_ips": unassigned_detail,
+    }
+
+
+def process_load_balancer_inventory(
+    lbs: List[Any],
+    nlbs: List[Any],
+    compartment_map: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """Calculates active flexible load balancers and network load balancers."""
+    active_lbs = [
+        lb for lb in lbs
+        if getattr(lb, "lifecycle_state", "ACTIVE") in ACTIVE_LB_STATES
+    ]
+    active_nlbs = [
+        nlb for nlb in nlbs
+        if getattr(nlb, "lifecycle_state", "ACTIVE") in ACTIVE_LB_STATES
+    ]
+
+    flb_count = len(active_lbs)
+    nlb_count = len(active_nlbs)
+    flb_limit = 1
+    nlb_limit = 1
+
+    flb_pct = (flb_count / flb_limit) * 100 if flb_limit else 0.0
+    nlb_pct = (nlb_count / nlb_limit) * 100 if nlb_limit else 0.0
+    status = get_status_color(max(flb_pct, nlb_pct))
+
+    all_lbs_detail = []
+    for lb in active_lbs:
+        ip_list = [getattr(ip, "ip_address", str(ip)) for ip in (getattr(lb, "ip_addresses", []) or [])]
+        all_lbs_detail.append({
+            "id": getattr(lb, "id", ""),
+            "display_name": getattr(lb, "display_name", "Load Balancer"),
+            "lb_type": "flexible",
+            "shape_name": getattr(lb, "shape_name", "10Mbps-Micro"),
+            "ip_addresses": ip_list,
+            "compartment_id": getattr(lb, "compartment_id", None),
+            "compartment_name": (compartment_map or {}).get(getattr(lb, "compartment_id", ""), "root"),
+            "lifecycle_state": getattr(lb, "lifecycle_state", "ACTIVE"),
+        })
+
+    for nlb in active_nlbs:
+        ip_list = [getattr(ip, "ip_address", str(ip)) for ip in (getattr(nlb, "ip_addresses", []) or [])]
+        all_lbs_detail.append({
+            "id": getattr(nlb, "id", ""),
+            "display_name": getattr(nlb, "display_name", "Network Load Balancer"),
+            "lb_type": "network",
+            "shape_name": "network",
+            "ip_addresses": ip_list,
+            "compartment_id": getattr(nlb, "compartment_id", None),
+            "compartment_name": (compartment_map or {}).get(getattr(nlb, "compartment_id", ""), "root"),
+            "lifecycle_state": getattr(nlb, "lifecycle_state", "ACTIVE"),
+        })
+
+    return {
+        "flexible_lb_count": flb_count,
+        "limit_flexible_lb": flb_limit,
+        "nlb_count": nlb_count,
+        "limit_nlb": nlb_limit,
+        "status": status,
+        "load_balancers_detail": all_lbs_detail,
+    }
+
+
+def process_autonomous_database_inventory(
+    databases: List[Any],
+    compartment_map: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """Calculates active Always Free autonomous databases and storage."""
+    active_dbs = [
+        db for db in databases
+        if getattr(db, "lifecycle_state", "AVAILABLE") in ACTIVE_DB_STATES
+    ]
+    free_tier_dbs = [db for db in active_dbs if getattr(db, "is_free_tier", True)]
+
+    total_storage = sum(getattr(db, "data_storage_size_in_gbs", 20) or 20 for db in free_tier_dbs)
+    count = len(free_tier_dbs)
+    limit = 2
+    limit_storage = 40.0
+
+    count_pct = (count / limit) * 100 if limit else 0.0
+    storage_pct = (total_storage / limit_storage) * 100 if limit_storage else 0.0
+
+    details = [
+        {
+            "id": getattr(db, "id", ""),
+            "display_name": getattr(db, "display_name", "Autonomous DB"),
+            "db_name": getattr(db, "db_name", "ADB"),
+            "is_free_tier": bool(getattr(db, "is_free_tier", True)),
+            "cpu_core_count": getattr(db, "cpu_core_count", 1) or 1,
+            "data_storage_size_in_gbs": getattr(db, "data_storage_size_in_gbs", 20) or 20,
+            "db_workload": getattr(db, "db_workload", "OLTP"),
+            "compartment_id": getattr(db, "compartment_id", None),
+            "compartment_name": (compartment_map or {}).get(getattr(db, "compartment_id", ""), "root"),
+            "lifecycle_state": getattr(db, "lifecycle_state", "AVAILABLE"),
+        }
+        for db in free_tier_dbs
+    ]
+
+    return {
+        "active_count": count,
+        "limit_count": limit,
+        "allocated_storage_gb": float(total_storage),
+        "limit_storage_gb": limit_storage,
+        "percentage": round(count_pct, 2),
+        "status": get_status_color(max(count_pct, storage_pct)),
+        "databases_detail": details,
+    }
+
+
+def process_bastion_inventory(
+    bastions: List[Any],
+    compartment_map: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """Calculates active Bastion services."""
+    active_bastions = [
+        b for b in bastions
+        if getattr(b, "lifecycle_state", "ACTIVE") in ACTIVE_BASTION_STATES
+    ]
+    count = len(active_bastions)
+    limit = 2
+    pct = (count / limit) * 100 if limit else 0.0
+
+    return {
+        "active_bastions": count,
+        "limit_bastions": limit,
+        "percentage": round(pct, 2),
+        "status": get_status_color(pct),
+    }
+
+
 def calculate_burn_rate_projection(
     current_ocpu_hours: float,
     current_egress_gb: float,
@@ -285,6 +507,11 @@ class OCICollector:
         self._block_storage_client = None
         self._object_storage_client = None
         self._usage_client = None
+        self._network_client = None
+        self._lb_client = None
+        self._nlb_client = None
+        self._db_client = None
+        self._bastion_client = None
 
     def _init_clients(self):
         if self._identity_client is not None:
@@ -296,6 +523,11 @@ class OCICollector:
         self._block_storage_client = oci.core.BlockstorageClient(self.config_dict)
         self._object_storage_client = oci.object_storage.ObjectStorageClient(self.config_dict)
         self._usage_client = oci.usage_api.UsageapiClient(self.config_dict)
+        self._network_client = oci.core.VirtualNetworkClient(self.config_dict)
+        self._lb_client = oci.load_balancer.LoadBalancerClient(self.config_dict)
+        self._nlb_client = oci.network_load_balancer.NetworkLoadBalancerClient(self.config_dict)
+        self._db_client = oci.database.DatabaseClient(self.config_dict)
+        self._bastion_client = oci.bastion.BastionClient(self.config_dict)
 
     def get_all_active_compartments(self, tenancy_id: str) -> List[Any]:
         """Recursively lists all accessible, active compartments starting from root."""
@@ -346,8 +578,14 @@ class OCICollector:
         all_volume_attachments = []
         all_instances = []
         all_buckets = []
+        all_vcns = []
+        all_public_ips = []
+        all_lbs = []
+        all_nlbs = []
+        all_databases = []
+        all_bastions = []
 
-        # 1. Fetch compute & storage per compartment
+        # 1. Fetch compute, storage, networking and database per compartment
         for comp in compartments:
             cid = comp.id
             try:
@@ -402,6 +640,67 @@ class OCICollector:
             except Exception:
                 pass
 
+            try:
+                # VCNs
+                vcns = oci.pagination.list_call_get_all_results(
+                    self._network_client.list_vcns,
+                    compartment_id=cid
+                ).data
+                all_vcns.extend(vcns)
+            except Exception:
+                pass
+
+            try:
+                # Public IPs (Regional)
+                pips = oci.pagination.list_call_get_all_results(
+                    self._network_client.list_public_ips,
+                    scope="REGION",
+                    compartment_id=cid
+                ).data
+                all_public_ips.extend(pips)
+            except Exception:
+                pass
+
+            try:
+                # Flexible Load Balancers
+                lbs = oci.pagination.list_call_get_all_results(
+                    self._lb_client.list_load_balancers,
+                    compartment_id=cid
+                ).data
+                all_lbs.extend(lbs)
+            except Exception:
+                pass
+
+            try:
+                # Network Load Balancers
+                nlbs = oci.pagination.list_call_get_all_results(
+                    self._nlb_client.list_network_load_balancers,
+                    compartment_id=cid
+                ).data
+                all_nlbs.extend(getattr(nlbs, "items", nlbs) if hasattr(nlbs, "items") else nlbs)
+            except Exception:
+                pass
+
+            try:
+                # Autonomous Databases
+                adbs = oci.pagination.list_call_get_all_results(
+                    self._db_client.list_autonomous_databases,
+                    compartment_id=cid
+                ).data
+                all_databases.extend(adbs)
+            except Exception:
+                pass
+
+            try:
+                # Bastions
+                bastions = oci.pagination.list_call_get_all_results(
+                    self._bastion_client.list_bastions,
+                    compartment_id=cid
+                ).data
+                all_bastions.extend(bastions)
+            except Exception:
+                pass
+
         # 2. Fetch object storage
         try:
             ns = self._object_storage_client.get_namespace().data
@@ -444,7 +743,23 @@ class OCICollector:
         compute_result = process_compute_inventory(all_instances)
         obj_result = process_object_storage_inventory(all_buckets)
 
-        # 5. Usage API (with safe fallback if delayed or empty)
+        # 5. Process Network, Load Balancers, Bastion & Database
+        vcn_result = process_vcn_inventory(all_vcns, comp_map)
+        vcns_detail = vcn_result.pop("vcns_detail", [])
+
+        pip_result = process_public_ip_inventory(all_public_ips, comp_map)
+        all_ips_detail = pip_result.pop("all_ips", [])
+        unassigned_ips = pip_result.pop("unassigned_ips", [])
+
+        lb_result = process_load_balancer_inventory(all_lbs, all_nlbs, comp_map)
+        lbs_detail = lb_result.pop("load_balancers_detail", [])
+
+        bastion_result = process_bastion_inventory(all_bastions, comp_map)
+
+        db_result = process_autonomous_database_inventory(all_databases, comp_map)
+        databases_detail = db_result.pop("databases_detail", [])
+
+        # 6. Usage API (with safe fallback if delayed or empty)
         monthly_ocpu_hours = 0.0
         egress_tb = 0.0
         egress_gb = 0.0
@@ -469,7 +784,23 @@ class OCICollector:
         )
         compute_result["ampere_a1"]["projected_ocpu_hours"] = burn_result["projected_ocpu_hours"]
 
-        # 6. Build consolidated dictionary
+        networking_full = {
+            "vcn": vcn_result,
+            "public_ip": pip_result,
+            "load_balancer": lb_result,
+            "bastion": bastion_result,
+            "egress": {
+                "egress_tb_current": round(egress_gb / 1024, 2),
+                "egress_tb_limit": 10.0,
+                "egress_projected_tb": round(burn_result["projected_egress_gb"] / 1024, 2),
+                "status": "safe"
+            }
+        }
+        database_summary = {
+            "autonomous_database": db_result
+        }
+
+        # 7. Build consolidated dictionary
         summary_payload = {
             "status": "healthy",
             "collected_at": now.isoformat(),
@@ -489,7 +820,16 @@ class OCICollector:
                 "egress_projected_tb": round(burn_result["projected_egress_gb"] / 1024, 2),
                 "status": "safe"
             },
+            "networking": networking_full,
+            "database": database_summary,
             "burn_rate": burn_result
         }
 
-        return summary_payload, all_volumes_detail
+        network_inventory = {
+            "vcns": vcns_detail,
+            "public_ips": all_ips_detail,
+            "unassigned_ips": unassigned_ips,
+            "load_balancers": lbs_detail,
+        }
+
+        return summary_payload, all_volumes_detail, network_inventory, databases_detail

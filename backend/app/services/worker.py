@@ -3,7 +3,12 @@ import logging
 from typing import Optional, Dict, Any, Tuple
 from app.config import load_oci_config, REFRESH_INTERVAL_SECONDS
 from app.services.oci_collector import OCICollector
-from app.services.cache import set_cached_summary, set_cached_volumes
+from app.services.cache import (
+    set_cached_summary,
+    set_cached_volumes,
+    set_cached_network,
+    set_cached_database,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +27,12 @@ async def collect_and_cache() -> Dict[str, Any]:
 
         # Run synchronous OCI SDK calls in asyncio thread pool
         loop = asyncio.get_running_loop()
-        summary, volumes = await loop.run_in_executor(None, collector.collect)
+        summary, volumes, network, databases = await loop.run_in_executor(None, collector.collect)
 
         await set_cached_summary(summary)
         await set_cached_volumes(volumes)
+        await set_cached_network(network)
+        await set_cached_database(databases)
         logger.info("Successfully updated OCI metrics in Redis.")
         return summary
     except Exception as e:

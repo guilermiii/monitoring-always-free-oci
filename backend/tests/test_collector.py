@@ -215,7 +215,7 @@ def test_load_balancer_aggregation(sample_load_balancers):
     assert result["limit_flexible_lb"] == 1
     assert result["nlb_count"] == 1
     assert result["limit_nlb"] == 1
-    assert result["status"] == "warning"  # at limit
+    assert result["status"] == "danger"  # at 100% capacity
 
 
 def test_autonomous_database_aggregation(sample_autonomous_databases):

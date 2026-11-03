@@ -84,3 +84,41 @@ async def get_storage_volumes():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Unable to retrieve storage volumes: {str(e)}"
         )
+
+
+@router.get("/network/inventory")
+async def get_network_inventory():
+    """Returns detailed inventory of VCNs, Public IPs, and Load Balancers."""
+    cached = await cache.get_cached_network()
+    if cached is not None:
+        return cached
+
+    try:
+        await worker.collect_and_cache()
+        cached = await cache.get_cached_network()
+        return cached or {"vcns": [], "public_ips": [], "unassigned_ips": [], "load_balancers": []}
+    except Exception as e:
+        logger.error(f"Failed to fetch network inventory: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Unable to retrieve network inventory: {str(e)}"
+        )
+
+
+@router.get("/database/inventory")
+async def get_database_inventory():
+    """Returns detailed inventory of Autonomous Databases."""
+    cached = await cache.get_cached_database()
+    if cached is not None:
+        return cached
+
+    try:
+        await worker.collect_and_cache()
+        cached = await cache.get_cached_database()
+        return cached or []
+    except Exception as e:
+        logger.error(f"Failed to fetch database inventory: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Unable to retrieve database inventory: {str(e)}"
+        )
