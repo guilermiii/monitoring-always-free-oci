@@ -169,3 +169,75 @@ def test_burn_rate_warning_on_exceeding():
     assert res["projected_ocpu_hours"] == 3600.0
     assert len(res["warnings"]) >= 1
     assert any("OCPU" in w for w in res["warnings"])
+
+
+def test_vcn_aggregation_and_filtering(sample_vcns):
+    """Test counting active VCNs and ignoring terminated ones."""
+    from app.services.oci_collector import process_vcn_inventory
+
+    result = process_vcn_inventory(sample_vcns)
+    assert result["active_vcns"] == 1
+    assert result["limit_vcns"] == 2
+    assert result["percentage"] == 50.0
+    assert result["status"] == "safe"
+    assert len(result["vcns_detail"]) == 1
+    assert result["vcns_detail"][0]["id"] == "ocid1.vcn.oc1..vcn1"
+
+
+def test_public_ip_aggregation_and_unassigned_detection(sample_public_ips):
+    """
+    Test categorizing reserved vs ephemeral public IPs,
+    and detecting unassigned (orphan) reserved IPs.
+    """
+    from app.services.oci_collector import process_public_ip_inventory
+
+    result = process_public_ip_inventory(sample_public_ips)
+    assert result["reserved_count"] == 2
+    assert result["reserved_limit"] == 1
+    assert result["unassigned_reserved_count"] == 1
+    assert result["ephemeral_count"] == 1
+    # 2 reserved > 1 limit -> danger
+    assert result["status"] == "danger"
+    assert len(result["unassigned_ips"]) == 1
+    assert result["unassigned_ips"][0]["ip_address"] == "129.148.1.20"
+
+
+def test_load_balancer_aggregation(sample_load_balancers):
+    """Test counting active flexible load balancers and NLBs."""
+    from app.services.oci_collector import process_load_balancer_inventory
+
+    result = process_load_balancer_inventory(
+        lbs=sample_load_balancers["load_balancers"],
+        nlbs=sample_load_balancers["network_load_balancers"],
+    )
+
+    assert result["flexible_lb_count"] == 1
+    assert result["limit_flexible_lb"] == 1
+    assert result["nlb_count"] == 1
+    assert result["limit_nlb"] == 1
+    assert result["status"] == "warning"  # at limit
+
+
+def test_autonomous_database_aggregation(sample_autonomous_databases):
+    """Test counting active Always Free autonomous databases and storage."""
+    from app.services.oci_collector import process_autonomous_database_inventory
+
+    result = process_autonomous_database_inventory(sample_autonomous_databases)
+    assert result["active_count"] == 1
+    assert result["limit_count"] == 2
+    assert result["allocated_storage_gb"] == 20.0
+    assert result["limit_storage_gb"] == 40.0
+    assert result["status"] == "safe"
+    assert len(result["databases_detail"]) == 1
+    assert result["databases_detail"][0]["db_name"] == "appdb"
+
+
+def test_bastion_aggregation(sample_bastions):
+    """Test counting active bastions and ignoring deleted ones."""
+    from app.services.oci_collector import process_bastion_inventory
+
+    result = process_bastion_inventory(sample_bastions)
+    assert result["active_bastions"] == 1
+    assert result["limit_bastions"] == 2
+    assert result["status"] == "safe"
+

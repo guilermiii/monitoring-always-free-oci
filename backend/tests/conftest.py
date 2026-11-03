@@ -183,3 +183,137 @@ def sample_object_storage():
         "namespace": "mytenancy-ns",
         "buckets": [b1, b2]
     }
+
+
+@pytest.fixture
+def sample_vcns():
+    v1 = MagicMock()
+    v1.id = "ocid1.vcn.oc1..vcn1"
+    v1.display_name = "prod-vcn"
+    v1.cidr_block = "10.0.0.0/16"
+    v1.lifecycle_state = "AVAILABLE"
+    v1.compartment_id = "ocid1.tenancy.oc1..root"
+
+    v_term = MagicMock()
+    v_term.id = "ocid1.vcn.oc1..vcn_term"
+    v_term.display_name = "old-vcn"
+    v_term.cidr_block = "172.16.0.0/16"
+    v_term.lifecycle_state = "TERMINATED"
+    v_term.compartment_id = "ocid1.tenancy.oc1..root"
+
+    return [v1, v_term]
+
+
+@pytest.fixture
+def sample_public_ips():
+    # 1 Reserved IP attached
+    ip1 = MagicMock()
+    ip1.id = "ocid1.publicip.oc1..ip1"
+    ip1.ip_address = "129.148.1.10"
+    ip1.display_name = "vault-ip"
+    ip1.lifetime = "RESERVED"
+    ip1.assigned_entity_id = "ocid1.vnic.oc1..vnic1"
+    ip1.assigned_entity_type = "VNIC"
+    ip1.lifecycle_state = "AVAILABLE"
+    ip1.compartment_id = "ocid1.tenancy.oc1..root"
+
+    # 1 Reserved IP unassigned (ORPHAN IP!)
+    ip2 = MagicMock()
+    ip2.id = "ocid1.publicip.oc1..ip2_unassigned"
+    ip2.ip_address = "129.148.1.20"
+    ip2.display_name = "unassigned-static-ip"
+    ip2.lifetime = "RESERVED"
+    ip2.assigned_entity_id = None
+    ip2.assigned_entity_type = None
+    ip2.lifecycle_state = "AVAILABLE"
+    ip2.compartment_id = "ocid1.tenancy.oc1..root"
+
+    # 1 Ephemeral IP
+    ip3 = MagicMock()
+    ip3.id = "ocid1.publicip.oc1..ip3_ephemeral"
+    ip3.ip_address = "129.148.1.30"
+    ip3.display_name = "ephemeral-compute-ip"
+    ip3.lifetime = "EPHEMERAL"
+    ip3.assigned_entity_id = "ocid1.vnic.oc1..vnic2"
+    ip3.assigned_entity_type = "VNIC"
+    ip3.lifecycle_state = "AVAILABLE"
+    ip3.compartment_id = "ocid1.tenancy.oc1..root"
+
+    # Terminated IP
+    ip_term = MagicMock()
+    ip_term.id = "ocid1.publicip.oc1..ip_term"
+    ip_term.ip_address = "129.148.1.40"
+    ip_term.display_name = "terminated-ip"
+    ip_term.lifetime = "RESERVED"
+    ip_term.lifecycle_state = "TERMINATED"
+
+    return [ip1, ip2, ip3, ip_term]
+
+
+@pytest.fixture
+def sample_load_balancers():
+    # Flexible Load Balancer
+    lb1 = MagicMock()
+    lb1.id = "ocid1.loadbalancer.oc1..lb1"
+    lb1.display_name = "web-alb"
+    lb1.shape_name = "10Mbps-Micro"
+    lb1.lifecycle_state = "ACTIVE"
+    lb1.ip_addresses = [MagicMock(ip_address="129.148.2.1", is_public=True)]
+    lb1.compartment_id = "ocid1.tenancy.oc1..root"
+
+    lb_deleted = MagicMock()
+    lb_deleted.id = "ocid1.loadbalancer.oc1..lb_del"
+    lb_deleted.display_name = "deleted-alb"
+    lb_deleted.shape_name = "10Mbps-Micro"
+    lb_deleted.lifecycle_state = "DELETED"
+
+    # Network Load Balancer (NLB)
+    nlb1 = MagicMock()
+    nlb1.id = "ocid1.networkloadbalancer.oc1..nlb1"
+    nlb1.display_name = "internal-nlb"
+    nlb1.lifecycle_state = "ACTIVE"
+    nlb1.ip_addresses = [MagicMock(ip_address="10.0.1.5", is_public=False)]
+    nlb1.compartment_id = "ocid1.tenancy.oc1..root"
+
+    return {
+        "load_balancers": [lb1, lb_deleted],
+        "network_load_balancers": [nlb1],
+    }
+
+
+@pytest.fixture
+def sample_autonomous_databases():
+    db1 = MagicMock()
+    db1.id = "ocid1.autonomousdatabase.oc1..db1"
+    db1.display_name = "app-db"
+    db1.db_name = "appdb"
+    db1.is_free_tier = True
+    db1.cpu_core_count = 1
+    db1.data_storage_size_in_gbs = 20
+    db1.db_workload = "OLTP"
+    db1.lifecycle_state = "AVAILABLE"
+    db1.compartment_id = "ocid1.tenancy.oc1..root"
+
+    db_deleted = MagicMock()
+    db_deleted.id = "ocid1.autonomousdatabase.oc1..db_del"
+    db_deleted.display_name = "old-db"
+    db_deleted.is_free_tier = True
+    db_deleted.lifecycle_state = "TERMINATED"
+
+    return [db1, db_deleted]
+
+
+@pytest.fixture
+def sample_bastions():
+    b1 = MagicMock()
+    b1.id = "ocid1.bastion.oc1..b1"
+    b1.name = "mgmt-bastion"
+    b1.lifecycle_state = "ACTIVE"
+    b1.compartment_id = "ocid1.tenancy.oc1..root"
+
+    b_del = MagicMock()
+    b_del.id = "ocid1.bastion.oc1..b_del"
+    b_del.name = "old-bastion"
+    b_del.lifecycle_state = "DELETED"
+
+    return [b1, b_del]
