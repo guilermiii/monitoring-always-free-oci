@@ -19,9 +19,19 @@ class MockRedis:
         return self._store.get(key)
 
     async def set(self, key: str, value: str, ex: int = None):
-        self._store[key] = value
+        self._store[key] = str(value)
         if ex:
             self._ttls[key] = ex
+        return True
+
+    async def incrby(self, key: str, amount: int = 1):
+        current = int(self._store.get(key, 0) or 0)
+        current += amount
+        self._store[key] = str(current)
+        return current
+
+    async def expire(self, key: str, time: int):
+        self._ttls[key] = time
         return True
 
     async def delete(self, key: str):

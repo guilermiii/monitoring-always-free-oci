@@ -502,6 +502,7 @@ class OCICollector:
     """
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
         self.config_dict = config_dict
+        self.api_calls_count = 0
         self._identity_client = None
         self._compute_client = None
         self._block_storage_client = None
@@ -512,6 +513,16 @@ class OCICollector:
         self._nlb_client = None
         self._db_client = None
         self._bastion_client = None
+
+    def _track_call(self, count: int = 1):
+        """Increments API calls counter."""
+        self.api_calls_count += count
+
+    def _paginate(self, fn, *args, **kwargs):
+        """Wraps oci.pagination.list_call_get_all_results and tracks API call count."""
+        import oci
+        self._track_call(1)
+        return oci.pagination.list_call_get_all_results(fn, *args, **kwargs)
 
     def _init_clients(self):
         if self._identity_client is not None:
@@ -537,6 +548,7 @@ class OCICollector:
         active_compartments = []
         try:
             # Add root tenancy itself
+            self._track_call(1)
             root_c = self._identity_client.get_tenancy(tenancy_id).data
             active_compartments.append(root_c)
         except Exception as e:
@@ -544,7 +556,7 @@ class OCICollector:
 
         try:
             # List subcompartments in entire subtree
-            sub_comps = oci.pagination.list_call_get_all_results(
+            sub_comps = self._paginate(
                 self._identity_client.list_compartments,
                 tenancy_id,
                 compartment_id_in_subtree=True,
@@ -556,12 +568,13 @@ class OCICollector:
 
         return active_compartments
 
-    def collect(self) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    def collect(self) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]]:
         """
         Executes a full inventory collection across all compartments.
         Returns:
-            (summary_dict, volumes_list)
+            (summary_dict, volumes_list, network_inventory, databases_detail)
         """
+        self.api_calls_count = 0
         self._init_clients()
         import oci
 
@@ -590,7 +603,7 @@ class OCICollector:
             cid = comp.id
             try:
                 # Boot Volumes
-                bvs = oci.pagination.list_call_get_all_results(
+                bvs = self._paginate(
                     self._block_storage_client.list_boot_volumes,
                     availability_domain=None,
                     compartment_id=cid
@@ -601,7 +614,7 @@ class OCICollector:
 
             try:
                 # Block Volumes
-                blks = oci.pagination.list_call_get_all_results(
+                blks = self._paginate(
                     self._block_storage_client.list_volumes,
                     compartment_id=cid
                 ).data
@@ -611,7 +624,7 @@ class OCICollector:
 
             try:
                 # Boot Volume Attachments
-                bvas = oci.pagination.list_call_get_all_results(
+                bvas = self._paginate(
                     self._compute_client.list_boot_volume_attachments,
                     availability_domain=None,
                     compartment_id=cid
@@ -622,7 +635,7 @@ class OCICollector:
 
             try:
                 # Volume Attachments
-                vas = oci.pagination.list_call_get_all_results(
+                vas = self._paginate(
                     self._compute_client.list_volume_attachments,
                     compartment_id=cid
                 ).data
@@ -632,7 +645,7 @@ class OCICollector:
 
             try:
                 # Instances
-                insts = oci.pagination.list_call_get_all_results(
+                insts = self._paginate(
                     self._compute_client.list_instances,
                     compartment_id=cid
                 ).data
@@ -642,7 +655,7 @@ class OCICollector:
 
             try:
                 # VCNs
-                vcns = oci.pagination.list_call_get_all_results(
+                vcns = self._paginate(
                     self._network_client.list_vcns,
                     compartment_id=cid
                 ).data
@@ -652,7 +665,7 @@ class OCICollector:
 
             try:
                 # Public IPs (Regional)
-                pips = oci.pagination.list_call_get_all_results(
+                pips = self._paginate(
                     self._network_client.list_public_ips,
                     scope="REGION",
                     compartment_id=cid
@@ -663,7 +676,7 @@ class OCICollector:
 
             try:
                 # Flexible Load Balancers
-                lbs = oci.pagination.list_call_get_all_results(
+                lbs = self._paginate(
                     self._lb_client.list_load_balancers,
                     compartment_id=cid
                 ).data
@@ -673,7 +686,7 @@ class OCICollector:
 
             try:
                 # Network Load Balancers
-                nlbs = oci.pagination.list_call_get_all_results(
+                nlbs = self._paginate(
                     self._nlb_client.list_network_load_balancers,
                     compartment_id=cid
                 ).data
@@ -683,7 +696,7 @@ class OCICollector:
 
             try:
                 # Autonomous Databases
-                adbs = oci.pagination.list_call_get_all_results(
+                adbs = self._paginate(
                     self._db_client.list_autonomous_databases,
                     compartment_id=cid
                 ).data
@@ -693,7 +706,7 @@ class OCICollector:
 
             try:
                 # Bastions
-                bastions = oci.pagination.list_call_get_all_results(
+                bastions = self._paginate(
                     self._bastion_client.list_bastions,
                     compartment_id=cid
                 ).data
@@ -703,16 +716,18 @@ class OCICollector:
 
         # 2. Fetch object storage
         try:
+            self._track_call(1)
             ns = self._object_storage_client.get_namespace().data
             for comp in compartments:
                 cid = comp.id
-                b_summaries = oci.pagination.list_call_get_all_results(
+                b_summaries = self._paginate(
                     self._object_storage_client.list_buckets,
                     namespace_name=ns,
                     compartment_id=cid
                 ).data
                 for b_sum in b_summaries:
                     try:
+                        self._track_call(1)
                         b_detail = self._object_storage_client.get_bucket(
                             namespace_name=ns,
                             bucket_name=b_sum.name,

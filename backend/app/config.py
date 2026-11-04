@@ -93,3 +93,5 @@ def load_oci_config(
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 REFRESH_INTERVAL_SECONDS = int(os.getenv("REFRESH_INTERVAL_SECONDS", "600"))  # 10 minutes
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "900"))  # 15 minutes
+OCI_API_DAILY_LIMIT = int(os.getenv("OCI_API_DAILY_LIMIT", "10000"))
+OCI_API_RATE_LIMIT_PER_MIN = int(os.getenv("OCI_API_RATE_LIMIT_PER_MIN", "3000"))

@@ -65,6 +65,14 @@ def mock_summary_data():
             "ocpu_burn_rate_daily": 50.0,
             "egress_burn_rate_daily_gb": 16.6,
             "warnings": []
+        },
+        "api_usage": {
+            "calls_today": 48,
+            "daily_limit": 10000,
+            "calls_last_run": 16,
+            "rate_limit_per_minute": 3000,
+            "percentage": 0.48,
+            "status": "safe"
         }
     }
 
@@ -196,3 +204,33 @@ async def test_get_database_inventory_endpoint(mock_redis):
             data = response.json()
             assert len(data) == 1
             assert data[0]["db_name"] == "appdb"
+
+
+@pytest.mark.asyncio
+async def test_summary_schema_includes_api_usage(mock_redis, mock_summary_data):
+    """Test GET /api/v1/summary properly serializes api_usage field."""
+    from app.main import app
+
+    mock_summary_data["api_usage"] = {
+        "calls_today": 120,
+        "daily_limit": 10000,
+        "calls_last_run": 15,
+        "rate_limit_per_minute": 3000,
+        "percentage": 1.2,
+        "status": "safe"
+    }
+    await mock_redis.set("oci:free_tier:summary", json.dumps(mock_summary_data))
+
+    with patch("app.services.cache.get_redis_client", return_value=mock_redis):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.get("/api/v1/summary")
+            assert response.status_code == 200
+            data = response.json()
+            assert "api_usage" in data
+            assert data["api_usage"]["calls_today"] == 120
+            assert data["api_usage"]["daily_limit"] == 10000
+            assert data["api_usage"]["calls_last_run"] == 15
+            assert data["api_usage"]["rate_limit_per_minute"] == 3000
+            assert data["api_usage"]["percentage"] == 1.2
+            assert data["api_usage"]["status"] == "safe"
+

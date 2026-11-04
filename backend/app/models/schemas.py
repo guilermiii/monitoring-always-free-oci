@@ -130,6 +130,15 @@ class BurnRateSummary(BaseModel):
     warnings: List[str] = Field(default_factory=list)
 
 
+class ApiUsageSummary(BaseModel):
+    calls_today: int
+    daily_limit: int = 10000
+    calls_last_run: int = 0
+    rate_limit_per_minute: int = 3000
+    percentage: float = 0.0
+    status: str = "safe"  # "safe" | "warning" | "danger"
+
+
 class SummaryResponse(BaseModel):
     status: str = "healthy"
     collected_at: str
@@ -140,6 +149,7 @@ class SummaryResponse(BaseModel):
     networking: Optional[NetworkingFullSummary] = None
     database: Optional[DatabaseSummary] = None
     burn_rate: BurnRateSummary
+    api_usage: Optional[ApiUsageSummary] = None
 
 
 class VolumeDetail(BaseModel):

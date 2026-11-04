@@ -8,6 +8,7 @@ from app.services.cache import (
     set_cached_volumes,
     set_cached_network,
     set_cached_database,
+    record_api_calls,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,11 +30,15 @@ async def collect_and_cache() -> Dict[str, Any]:
         loop = asyncio.get_running_loop()
         summary, volumes, network, databases = await loop.run_in_executor(None, collector.collect)
 
+        # Record API calls in Redis and attach api_usage to summary
+        api_usage = await record_api_calls(collector.api_calls_count)
+        summary["api_usage"] = api_usage
+
         await set_cached_summary(summary)
         await set_cached_volumes(volumes)
         await set_cached_network(network)
         await set_cached_database(databases)
-        logger.info("Successfully updated OCI metrics in Redis.")
+        logger.info(f"Successfully updated OCI metrics in Redis (API calls this run: {collector.api_calls_count}).")
         return summary
     except Exception as e:
         logger.error(f"Failed to collect OCI metrics: {e}", exc_info=True)

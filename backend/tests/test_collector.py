@@ -241,3 +241,45 @@ def test_bastion_aggregation(sample_bastions):
     assert result["limit_bastions"] == 2
     assert result["status"] == "safe"
 
+
+def test_collector_tracks_api_calls_count():
+    """Test that OCICollector initializes and tracks API calls count."""
+    from app.services.oci_collector import OCICollector
+
+    collector = OCICollector(config_dict={"tenancy": "ocid1.tenancy.oc1..test", "region": "sa-saopaulo-1"})
+    assert collector.api_calls_count == 0
+
+    collector._track_call()
+    assert collector.api_calls_count == 1
+
+    collector._track_call(4)
+    assert collector.api_calls_count == 5
+
+
+@pytest.mark.asyncio
+async def test_cache_records_api_calls(mock_redis):
+    """Test recording and retrieving daily API calls in cache."""
+    from app.services import cache
+    from unittest.mock import patch
+
+    with patch("app.services.cache.get_redis_client", return_value=mock_redis):
+        usage = await cache.record_api_calls(15)
+        assert usage["calls_today"] == 15
+        assert usage["calls_last_run"] == 15
+        assert usage["daily_limit"] == 10000
+        assert usage["rate_limit_per_minute"] == 3000
+        assert usage["percentage"] == 0.15
+        assert usage["status"] == "safe"
+
+        # Record another run
+        usage2 = await cache.record_api_calls(20)
+        assert usage2["calls_today"] == 35
+        assert usage2["calls_last_run"] == 20
+        assert usage2["percentage"] == 0.35
+
+        # Query usage directly
+        cached_usage = await cache.get_api_usage()
+        assert cached_usage["calls_today"] == 35
+        assert cached_usage["calls_last_run"] == 20
+
+
