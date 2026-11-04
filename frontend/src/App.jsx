@@ -108,7 +108,7 @@ export default function App() {
   const computeMicro = summary?.compute?.amd_micro || {};
   const networking = summary?.networking || {};
   const vcn = networking.vcn || { active_vcns: 0, limit_vcns: 2, percentage: 0, status: 'safe' };
-  const publicIp = networking.public_ip || { reserved_count: 0, reserved_limit: 1, unassigned_reserved_count: 0, ephemeral_count: 0, percentage: 0, status: 'safe' };
+  const publicIp = networking.public_ip || { reserved_count: 0, reserved_limit: 1, unassigned_reserved_count: 0, ephemeral_count: 0, total_active_ips: 0, percentage: 0, status: 'safe' };
   const loadBalancer = networking.load_balancer || { flexible_lb_count: 0, limit_flexible_lb: 1, nlb_count: 0, limit_nlb: 1, status: 'safe' };
   const bastion = networking.bastion || { active_bastions: 0, limit_bastions: 2, percentage: 0, status: 'safe' };
   const database = summary?.database?.autonomous_database || { active_count: 0, limit_count: 2, allocated_storage_gb: 0, limit_storage_gb: 40, percentage: 0, status: 'safe' };
@@ -295,29 +295,59 @@ export default function App() {
               </div>
             </MetricCard>
 
-            {/* Public IPs */}
+            {/* Public IPs: Fixos & Efêmeros */}
             <MetricCard
-              title="IPs Fixos Reservados"
-              subtitle="Endereços Públicos Estáticos"
+              title="IPs Públicos (Fixos & Efêmeros)"
+              subtitle="1 IP Fixo Always Free + Efêmeros"
               icon={Globe}
               used={publicIp.reserved_count || 0}
-              limit={publicIp.reserved_limit || 1}
-              unit="IP Reservado"
+              limit={`${publicIp.reserved_limit || 1} Fixo`}
+              unit={(publicIp.ephemeral_count || 0) > 0 ? `(+${publicIp.ephemeral_count} efêmero${publicIp.ephemeral_count > 1 ? 's' : ''})` : 'Reservado'}
               percentage={publicIp.percentage || 0}
               status={publicIp.status}
             >
-              <div className="flex justify-between">
-                <span>IPs Efêmeros em Uso:</span>
-                <span className="text-slate-200 font-medium">{publicIp.ephemeral_count || 0}</span>
+              {/* Mini cards lado a lado */}
+              <div className="grid grid-cols-2 gap-2 pb-1">
+                <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span>IP Fixo Reservado</span>
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1 font-mono">
+                    <span className="text-base font-bold text-white">{publicIp.reserved_count || 0}</span>
+                    <span className="text-xs text-slate-500">/ {publicIp.reserved_limit || 1}</span>
+                    <span className="text-[10px] text-amber-400/90 ml-auto font-sans">Gratuito</span>
+                  </div>
+                </div>
+
+                <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                    <span>IPs Efêmeros</span>
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1 font-mono">
+                    <span className="text-base font-bold text-cyan-300">{publicIp.ephemeral_count || 0}</span>
+                    <span className="text-[10px] text-slate-400 ml-auto font-sans">Em uso</span>
+                  </div>
+                </div>
               </div>
+
+              {/* Total & Vínculo */}
+              <div className="flex justify-between items-center text-xs pt-1 border-t border-slate-800/60">
+                <span className="text-slate-400">Total de IPs Ativos:</span>
+                <span className="font-mono font-bold text-slate-200">
+                  {(publicIp.reserved_count || 0) + (publicIp.ephemeral_count || 0)}
+                </span>
+              </div>
+
               {publicIp.unassigned_reserved_count > 0 ? (
-                <div className="flex justify-between text-rose-400 font-semibold">
-                  <span>Não Vinculados:</span>
-                  <span>{publicIp.unassigned_reserved_count} (Ociosos)</span>
+                <div className="flex justify-between items-center text-rose-400 font-semibold bg-rose-500/10 px-2 py-1 rounded border border-rose-500/20 text-xs">
+                  <span>IP Fixo Ocioso:</span>
+                  <span>{publicIp.unassigned_reserved_count} Desvinculado</span>
                 </div>
               ) : (
-                <div className="flex justify-between text-emerald-400">
-                  <span>Vínculo:</span>
+                <div className="flex justify-between items-center text-emerald-400 text-xs">
+                  <span>Status de Vínculo:</span>
                   <span>Todos Vinculados</span>
                 </div>
               )}

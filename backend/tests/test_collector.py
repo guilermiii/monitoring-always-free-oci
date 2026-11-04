@@ -196,6 +196,7 @@ def test_public_ip_aggregation_and_unassigned_detection(sample_public_ips):
     assert result["reserved_limit"] == 1
     assert result["unassigned_reserved_count"] == 1
     assert result["ephemeral_count"] == 1
+    assert result["total_active_ips"] == 3
     # 2 reserved > 1 limit -> danger
     assert result["status"] == "danger"
     assert len(result["unassigned_ips"]) == 1

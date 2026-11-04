@@ -234,3 +234,39 @@ async def test_summary_schema_includes_api_usage(mock_redis, mock_summary_data):
             assert data["api_usage"]["percentage"] == 1.2
             assert data["api_usage"]["status"] == "safe"
 
+
+@pytest.mark.asyncio
+async def test_summary_includes_networking_with_both_ip_types(mock_redis, mock_summary_data):
+    """Test GET /api/v1/summary properly serializes networking.public_ip with reserved and ephemeral counts."""
+    from app.main import app
+
+    mock_summary_data["networking"] = {
+        "vcn": {"active_vcns": 1, "limit_vcns": 2, "percentage": 50.0, "status": "safe"},
+        "public_ip": {
+            "reserved_count": 1,
+            "reserved_limit": 1,
+            "unassigned_reserved_count": 0,
+            "ephemeral_count": 2,
+            "total_active_ips": 3,
+            "percentage": 100.0,
+            "status": "warning"
+        },
+        "load_balancer": {"flexible_lb_count": 1, "limit_flexible_lb": 1, "nlb_count": 0, "limit_nlb": 1, "status": "safe"},
+        "bastion": {"active_bastions": 1, "limit_bastions": 2, "status": "safe"},
+        "egress": {"egress_tb_current": 0.5, "egress_tb_limit": 10.0, "egress_projected_tb": 1.5, "status": "safe"}
+    }
+    await mock_redis.set("oci:free_tier:summary", json.dumps(mock_summary_data))
+
+    with patch("app.services.cache.get_redis_client", return_value=mock_redis):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.get("/api/v1/summary")
+            assert response.status_code == 200
+            data = response.json()
+            assert "networking" in data
+            pip = data["networking"]["public_ip"]
+            assert pip["reserved_count"] == 1
+            assert pip["ephemeral_count"] == 2
+            assert pip["total_active_ips"] == 3
+            assert pip["status"] == "warning"
+
+

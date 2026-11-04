@@ -85,6 +85,8 @@ export default function ResourceInventory({
 
   const orphanVolumeCount = volumes.filter((v) => v.is_orphan).length;
   const unassignedIpCount = publicIps.filter((ip) => ip.is_unassigned).length;
+  const reservedIpCount = publicIps.filter((ip) => ip.lifetime === 'RESERVED').length;
+  const ephemeralIpCount = publicIps.filter((ip) => ip.lifetime === 'EPHEMERAL').length;
 
   return (
     <div id="resource-inventory" className="rounded-2xl bg-[#161B22] border border-[#22272E] shadow-lg overflow-hidden">
@@ -303,8 +305,18 @@ export default function ResourceInventory({
         {/* 3. Public IPs Tab */}
         {currentTab === 'ips' && (
           <div>
-            <div className="px-5 py-2.5 bg-slate-900/40 flex justify-between items-center text-xs text-slate-400 border-b border-slate-800">
-              <span>Listando IPs Públicos Reservados e Efêmeros</span>
+            <div className="px-5 py-2.5 bg-slate-900/40 flex flex-wrap justify-between items-center gap-2 text-xs text-slate-400 border-b border-slate-800">
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                <span className="font-medium text-slate-300">IPs Públicos:</span>
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  Fixos Reservados: {reservedIpCount} / 1
+                </span>
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[11px] font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                  Efêmeros: {ephemeralIpCount}
+                </span>
+              </div>
               <button
                 onClick={() => setFilterUnassignedIps(!filterUnassignedIps)}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border ${

@@ -319,6 +319,7 @@ def process_public_ip_inventory(
         "reserved_limit": reserved_limit,
         "unassigned_reserved_count": len(unassigned_reserved),
         "ephemeral_count": len(ephemeral_ips),
+        "total_active_ips": len(active_ips),
         "percentage": pct,
         "status": get_status_color(pct),
         "all_ips": all_ips_detail,
@@ -585,6 +586,15 @@ class OCICollector:
         comp_map = {getattr(c, "id", ""): getattr(c, "name", "root") for c in compartments}
         comp_map[tenancy_id] = "root"
 
+        # List availability domains for AD-scoped ephemeral IP lookups
+        availability_domains = []
+        try:
+            self._track_call(1)
+            ad_res = self._identity_client.list_availability_domains(compartment_id=tenancy_id)
+            availability_domains = getattr(ad_res, "data", ad_res) or []
+        except Exception as e:
+            logger.debug(f"Could not list availability domains: {e}")
+
         all_boot_volumes = []
         all_block_volumes = []
         all_boot_attachments = []
@@ -663,16 +673,47 @@ class OCICollector:
             except Exception:
                 pass
 
+            # Public IPs: Reserved (Fixos), Regional Ephemeral, and AD-scoped Ephemeral
             try:
-                # Public IPs (Regional)
-                pips = self._paginate(
+                # 1. Reserved Public IPs (Regional)
+                pips_res = self._paginate(
                     self._network_client.list_public_ips,
                     scope="REGION",
-                    compartment_id=cid
+                    compartment_id=cid,
+                    lifetime="RESERVED"
                 ).data
-                all_public_ips.extend(pips)
+                all_public_ips.extend(pips_res)
             except Exception:
                 pass
+
+            try:
+                # 2. Ephemeral Public IPs (Regional)
+                pips_eph_reg = self._paginate(
+                    self._network_client.list_public_ips,
+                    scope="REGION",
+                    compartment_id=cid,
+                    lifetime="EPHEMERAL"
+                ).data
+                all_public_ips.extend(pips_eph_reg)
+            except Exception:
+                pass
+
+            # 3. Ephemeral Public IPs per Availability Domain (Compute instance VNICs)
+            for ad in availability_domains:
+                ad_name = getattr(ad, "name", None)
+                if not ad_name:
+                    continue
+                try:
+                    pips_ad = self._paginate(
+                        self._network_client.list_public_ips,
+                        scope="AVAILABILITY_DOMAIN",
+                        availability_domain=ad_name,
+                        compartment_id=cid,
+                        lifetime="EPHEMERAL"
+                    ).data
+                    all_public_ips.extend(pips_ad)
+                except Exception:
+                    pass
 
             try:
                 # Flexible Load Balancers
@@ -761,6 +802,16 @@ class OCICollector:
         # 5. Process Network, Load Balancers, Bastion & Database
         vcn_result = process_vcn_inventory(all_vcns, comp_map)
         vcns_detail = vcn_result.pop("vcns_detail", [])
+
+        # Deduplicate public IPs by ID
+        unique_ips = {}
+        for ip in all_public_ips:
+            ip_id = getattr(ip, "id", None)
+            if ip_id:
+                unique_ips[ip_id] = ip
+            else:
+                unique_ips[str(id(ip))] = ip
+        all_public_ips = list(unique_ips.values())
 
         pip_result = process_public_ip_inventory(all_public_ips, comp_map)
         all_ips_detail = pip_result.pop("all_ips", [])

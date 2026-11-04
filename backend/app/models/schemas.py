@@ -83,6 +83,7 @@ class PublicIpSummary(BaseModel):
     reserved_limit: int = 1
     unassigned_reserved_count: int
     ephemeral_count: int
+    total_active_ips: int = 0
     percentage: float
     status: str = "safe"
 
