@@ -50,6 +50,10 @@ async def test_e2e_backend_direct_summary():
                 assert "networking" in data
                 assert "database" in data
                 assert "burn_rate" in data
+                if "api_usage" in data and data["api_usage"] is not None:
+                    assert "calls_today" in data["api_usage"]
+                    assert "daily_limit" in data["api_usage"]
+                    assert data["api_usage"]["daily_limit"] >= 1000
         except httpx.ConnectError:
             pytest.skip(f"Backend not reachable at {BACKEND_URL}")
 

@@ -120,6 +120,7 @@ export default function App() {
       <Header
         tenancy={summary?.tenancy}
         collectedAt={summary?.collected_at}
+        apiUsage={summary?.api_usage}
         isRefreshing={refreshing}
         onRefresh={handleForceRefresh}
       />

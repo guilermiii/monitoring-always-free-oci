@@ -1,7 +1,7 @@
 import React from 'react';
-import { RefreshCw, Cloud, CheckCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { RefreshCw, Cloud, Activity, CheckCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
 
-export default function Header({ tenancy, collectedAt, isRefreshing, onRefresh, connectionStatus }) {
+export default function Header({ tenancy, collectedAt, apiUsage, isRefreshing, onRefresh, connectionStatus }) {
   const formatTime = (isoString) => {
     if (!isoString) return 'Nunca';
     try {
@@ -10,6 +10,17 @@ export default function Header({ tenancy, collectedAt, isRefreshing, onRefresh, 
         ' (' + d.toLocaleDateString('pt-BR') + ')';
     } catch {
       return isoString;
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'danger':
+        return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+      case 'warning':
+        return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+      default:
+        return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
     }
   };
 
@@ -38,8 +49,34 @@ export default function Header({ tenancy, collectedAt, isRefreshing, onRefresh, 
           </div>
         </div>
 
-        {/* Sync Controls & Last Update */}
-        <div className="flex items-center gap-4">
+        {/* Sync Controls, API Quota & Last Update */}
+        <div className="flex items-center gap-4 flex-wrap sm:flex-nowrap justify-end">
+          
+          {/* OCI API Calls Quota Widget */}
+          {apiUsage && (
+            <div
+              className="text-right hidden sm:block bg-[#0D1117]/80 px-3 py-1.5 rounded-lg border border-[#30363D]"
+              title={`Consumo diário de chamadas de API da OCI: ${apiUsage.calls_today.toLocaleString('pt-BR')} realizadas de ${apiUsage.daily_limit.toLocaleString('pt-BR')} permitidas (${apiUsage.percentage}%). Limite de taxa da OCI: 3.000 req/min.`}
+            >
+              <div className="flex items-center justify-end gap-1.5 text-xs text-slate-400">
+                <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Cota de API (Hoje)</span>
+                <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-medium border ${getStatusBadge(apiUsage.status)}`}>
+                  {apiUsage.percentage}%
+                </span>
+              </div>
+              <div className="flex items-baseline justify-end gap-1 font-mono text-xs mt-0.5">
+                <span className="font-bold text-slate-100">{apiUsage.calls_today.toLocaleString('pt-BR')}</span>
+                <span className="text-slate-500">/</span>
+                <span className="text-slate-400">{apiUsage.daily_limit.toLocaleString('pt-BR')}</span>
+                <span className="text-[10px] text-slate-500 ml-1 hidden lg:inline">
+                  ({apiUsage.calls_last_run} na varredura)
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Last Update */}
           <div className="text-right hidden sm:block">
             <p className="text-xs text-slate-400">Última Coleta</p>
             <p className="text-xs font-medium text-slate-200 font-mono">{formatTime(collectedAt)}</p>
