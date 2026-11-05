@@ -7,6 +7,30 @@ services:
     networks:
       - oci-net
 
+  prometheus:
+    image: prom/prometheus:v3.16.0-rc.4
+    volumes:
+      - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yml
+    container_name: oci-prometheus
+    restart: unless-stopped 
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+      - frontend
+      - redis
+    networks:
+      - oci-net
+  exporter:
+    image: oliver006/redis_exporter:v1.97.0-alpine
+    container_name: oci-redis-exporter
+    restart: unless-stopped
+    networks:
+    - oci-net
+    environment:
+      REDIS_ADDR: redis
+      REDIS_USER: default
+
   backend:
     build:
       context: ./backend
@@ -41,7 +65,7 @@ services:
       - backend
     networks:
       - oci-net
-
+  
 networks:
   oci-net:
     driver: bridge
