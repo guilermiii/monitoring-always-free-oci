@@ -1,7 +1,13 @@
 import logging
 from typing import List, Dict, Any
 from fastapi import APIRouter, HTTPException, status
-from app.models.schemas import HealthResponse, SummaryResponse, VolumeDetail
+from app.models.schemas import (
+    HealthResponse,
+    SummaryResponse,
+    VolumeDetail,
+    NetworkInventoryResponse,
+    DatabaseDetail,
+)
 from app.services import cache
 from app.services import worker
 from app.config import load_oci_config
@@ -86,7 +92,7 @@ async def get_storage_volumes():
         )
 
 
-@router.get("/network/inventory")
+@router.get("/network/inventory", response_model=NetworkInventoryResponse)
 async def get_network_inventory():
     """Returns detailed inventory of VCNs, Public IPs, and Load Balancers."""
     cached = await cache.get_cached_network()
@@ -105,7 +111,7 @@ async def get_network_inventory():
         )
 
 
-@router.get("/database/inventory")
+@router.get("/database/inventory", response_model=List[DatabaseDetail])
 async def get_database_inventory():
     """Returns detailed inventory of Autonomous Databases."""
     cached = await cache.get_cached_database()

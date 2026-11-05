@@ -75,3 +75,63 @@ async def test_e2e_network_and_database_inventory():
             assert db_resp.status_code in [200, 503]
         except httpx.ConnectError:
             pytest.skip(f"Frontend proxy not reachable at {FRONTEND_URL}")
+
+
+@pytest.mark.asyncio
+async def test_e2e_kubernetes_probes():
+    """Verify Kubernetes probes (livez, readyz, startupz) on both backend and frontend proxy."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            # Backend direct checks
+            live_resp = await client.get(f"{BACKEND_URL}/livez")
+            assert live_resp.status_code == 200
+            assert live_resp.json()["status"] == "alive"
+
+            ready_resp = await client.get(f"{BACKEND_URL}/readyz")
+            assert ready_resp.status_code in [200, 503]
+
+            startup_resp = await client.get(f"{BACKEND_URL}/startupz")
+            assert startup_resp.status_code in [200, 503]
+
+            # Frontend proxy checks
+            fe_live = await client.get(f"{FRONTEND_URL}/livez")
+            assert fe_live.status_code == 200
+            assert fe_live.json()["status"] == "alive"
+        except httpx.ConnectError:
+            pytest.skip("Stack not running for E2E probe validation")
+
+
+@pytest.mark.asyncio
+async def test_e2e_prometheus_metrics():
+    """Verify Prometheus metrics scrape endpoint returns text/plain format."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(f"{BACKEND_URL}/metrics")
+            assert resp.status_code == 200
+            assert "text/plain" in resp.headers["content-type"]
+            assert "http_requests_total" in resp.text
+            assert "oci_storage_block_limit_gb" in resp.text
+
+            # Test via frontend proxy
+            fe_resp = await client.get(f"{FRONTEND_URL}/metrics")
+            assert fe_resp.status_code == 200
+            assert "text/plain" in fe_resp.headers["content-type"]
+        except httpx.ConnectError:
+            pytest.skip("Stack not running for E2E metrics validation")
+
+
+@pytest.mark.asyncio
+async def test_e2e_swagger_and_openapi():
+    """Verify Swagger UI and OpenAPI schema completeness."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.get(f"{BACKEND_URL}/openapi.json")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "/metrics" in data["paths"]
+            assert "/livez" in data["paths"]
+            assert "/readyz" in data["paths"]
+            assert "/startupz" in data["paths"]
+        except httpx.ConnectError:
+            pytest.skip("Backend not running for OpenAPI validation")
+

@@ -1,5 +1,40 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
+
+
+class LivenessResponse(BaseModel):
+    status: str = Field(default="alive", description="Liveness probe status ('alive')")
+    timestamp: str = Field(description="ISO 8601 timestamp of the probe check")
+
+
+class ReadinessResponse(BaseModel):
+    status: str = Field(default="ready", description="Readiness status ('ready' or 'not_ready')")
+    redis_connected: bool = Field(description="Indicates whether Redis is reachable and responding to ping")
+    oci_configured: bool = Field(description="Indicates whether OCI credentials and config are present")
+    timestamp: str = Field(description="ISO 8601 timestamp of the probe check")
+    details: Optional[str] = Field(default=None, description="Diagnostic information if not ready")
+
+
+class StartupResponse(BaseModel):
+    status: str = Field(default="started", description="Startup probe status ('started' or 'starting')")
+    app_started: bool = Field(description="True if application lifespan startup has completed")
+    timestamp: str = Field(description="ISO 8601 timestamp of the probe check")
+
+
+class GeneralHealthResponse(BaseModel):
+    status: str = Field(default="healthy", description="Overall health status ('healthy' or 'degraded')")
+    redis_connected: bool = Field(description="Redis connection status")
+    oci_configured: bool = Field(description="OCI configuration status")
+    timestamp: str = Field(description="ISO 8601 timestamp of the health check")
+    message: Optional[str] = Field(default=None, description="Diagnostic message")
+
+
+class RootResponse(BaseModel):
+    app: str = Field(default="OCI Always Free Monitor API", description="Application name")
+    version: str = Field(default="1.0.0", description="Application version")
+    docs_url: str = Field(default="/docs", description="Swagger UI documentation URL")
+    api_v1: str = Field(default="/api/v1/summary", description="V1 summary API URL")
+    metrics_url: str = Field(default="/metrics", description="Prometheus metrics scrape URL")
 
 
 class HealthResponse(BaseModel):
@@ -179,9 +214,9 @@ class VcnDetail(BaseModel):
 class PublicIpDetail(BaseModel):
     id: str
     ip_address: str
-    display_name: str
-    lifetime: str  # "RESERVED" | "EPHEMERAL"
-    is_unassigned: bool
+    display_name: str = "public-ip"
+    lifetime: str = "RESERVED"  # "RESERVED" | "EPHEMERAL"
+    is_unassigned: bool = False
     assigned_entity_id: Optional[str] = None
     assigned_entity_type: Optional[str] = None
     compartment_id: Optional[str] = None
@@ -192,8 +227,8 @@ class PublicIpDetail(BaseModel):
 class LoadBalancerDetail(BaseModel):
     id: str
     display_name: str
-    lb_type: str  # "flexible" | "network"
-    shape_name: str
+    lb_type: str = "flexible"  # "flexible" | "network"
+    shape_name: str = "flexible"
     ip_addresses: List[str] = Field(default_factory=list)
     compartment_id: Optional[str] = None
     compartment_name: Optional[str] = None
@@ -211,3 +246,11 @@ class DatabaseDetail(BaseModel):
     compartment_id: Optional[str] = None
     compartment_name: Optional[str] = None
     lifecycle_state: str = "AVAILABLE"
+
+
+class NetworkInventoryResponse(BaseModel):
+    vcns: List[VcnDetail] = Field(default_factory=list, description="List of Virtual Cloud Networks")
+    public_ips: List[PublicIpDetail] = Field(default_factory=list, description="List of active Public IPs")
+    unassigned_ips: List[PublicIpDetail] = Field(default_factory=list, description="List of unassigned (orphan) Public IPs")
+    load_balancers: List[LoadBalancerDetail] = Field(default_factory=list, description="List of Load Balancers")
+
