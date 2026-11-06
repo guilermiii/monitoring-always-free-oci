@@ -29,6 +29,28 @@ class GeneralHealthResponse(BaseModel):
     message: Optional[str] = Field(default=None, description="Diagnostic message")
 
 
+class LoginRequest(BaseModel):
+    username: str = Field(..., description="Administrator username")
+    password: str = Field(..., description="Administrator password")
+
+
+class LoginResponse(BaseModel):
+    status: str = Field(default="authenticated", description="Authentication status")
+    username: str = Field(description="Logged in username")
+    token: str = Field(description="JWT Bearer access token")
+    role: str = Field(default="admin", description="User role")
+
+
+class AuthStatusResponse(BaseModel):
+    authenticated: bool = Field(description="True if current session is authenticated as admin")
+    username: Optional[str] = Field(default=None, description="Username if authenticated")
+    role: str = Field(default="guest", description="User role ('admin' or 'guest')")
+
+
+class LogoutResponse(BaseModel):
+    status: str = Field(default="logged_out", description="Logout operation status")
+
+
 class RootResponse(BaseModel):
     app: str = Field(default="OCI Always Free Monitor API", description="Application name")
     version: str = Field(default="1.0.0", description="Application version")
@@ -186,6 +208,7 @@ class SummaryResponse(BaseModel):
     database: Optional[DatabaseSummary] = None
     burn_rate: BurnRateSummary
     api_usage: Optional[ApiUsageSummary] = None
+    portfolio_mode: Optional[bool] = Field(default=False, description="True if data is sanitized for public portfolio mode")
 
 
 class VolumeDetail(BaseModel):

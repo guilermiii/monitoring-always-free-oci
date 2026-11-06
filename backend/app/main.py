@@ -7,9 +7,15 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers.metrics import router as metrics_router
 from app.routers.observability import router as observability_router, set_app_started
+from app.routers.auth import router as auth_router
+from app.services.rate_limiter import RateLimitMiddleware
+from app.services.bot_defense import BotDefenseMiddleware
 from app.services.prometheus import HTTP_REQUESTS_TOTAL, HTTP_REQUEST_DURATION_SECONDS
 from app.services.worker import start_background_worker
+from app.services.cache import get_redis_client
+from app.services.api_usage_store import rehydrate_redis_from_disk
 from app.models.schemas import RootResponse
+from app.config import ALLOWED_ORIGINS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,6 +33,10 @@ tags_metadata = [
         "description": "Prometheus scrape endpoint exposing HTTP latency/requests and real-time OCI Always Free gauges.",
     },
     {
+        "name": "Authentication",
+        "description": "Single-user administrator login, session management, and brute-force protection.",
+    },
+    {
         "name": "metrics",
         "description": "OCI Always Free resources monitoring, cache summary, on-demand refresh, and detailed inventories.",
     },
@@ -39,7 +49,14 @@ tags_metadata = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize background worker unless explicitly disabled
+    # Startup: Rehydrate API quota from disk into Redis if Redis was restarted
+    try:
+        redis_client = get_redis_client()
+        await rehydrate_redis_from_disk(redis_client)
+    except Exception as e:
+        logger.warning(f"Startup Redis rehydration check encountered an error: {e}")
+
+    # Initialize background worker unless explicitly disabled
     disable_worker = os.getenv("DISABLE_BACKGROUND_WORKER", "false").lower() in ["1", "true", "yes"]
     worker_task = None
     if not disable_worker:
@@ -72,14 +89,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS configuration supporting credentials (cookies)
+if ALLOWED_ORIGINS == ["*"]:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?://.*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+# Security & Flooding Mitigation Middlewares
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(BotDefenseMiddleware)
 
 
 @app.middleware("http")
@@ -111,6 +141,7 @@ async def prometheus_metrics_middleware(request: Request, call_next):
 
 # Register routers
 app.include_router(observability_router)
+app.include_router(auth_router)
 app.include_router(metrics_router)
 
 

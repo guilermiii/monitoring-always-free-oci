@@ -134,41 +134,61 @@ async def test_get_summary_from_cache(mock_redis, mock_summary_data):
 
 @pytest.mark.asyncio
 async def test_post_refresh_triggers_collector(mock_redis, mock_summary_data):
-    """Test POST /api/v1/refresh forces collector execution and updates Redis."""
+    """Test POST /api/v1/refresh rejects anonymous requests with 401 and accepts admin with 200."""
     from app.main import app
+    from app.services.security import create_access_token
 
     with patch("app.services.cache.get_redis_client", return_value=mock_redis):
         with patch("app.services.worker.collect_and_cache", AsyncMock(return_value=mock_summary_data)):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-                response = await ac.post("/api/v1/refresh")
-                assert response.status_code == 200
-                data = response.json()
+                # 1. Anonymous request should be blocked
+                unauth_resp = await ac.post("/api/v1/refresh")
+                assert unauth_resp.status_code == 401
+                assert "Autenticação administrativa necessária" in unauth_resp.json()["detail"]
+
+                # 2. Authenticated admin request should succeed
+                token = create_access_token({"sub": "admin"})
+                auth_resp = await ac.post("/api/v1/refresh", headers={"Authorization": f"Bearer {token}"})
+                assert auth_resp.status_code == 200
+                data = auth_resp.json()
                 assert data["status"] == "healthy"
                 assert data["storage"]["block_storage"]["orphan_volumes_count"] == 1
 
 
 @pytest.mark.asyncio
 async def test_get_storage_volumes_endpoint(mock_redis, mock_volumes_data):
-    """Test GET /api/v1/storage/volumes returns detailed list of volumes with orphan status."""
+    """Test GET /api/v1/storage/volumes masks for visitors and unmasks for admin."""
     from app.main import app
+    from app.services.security import create_access_token
 
     await mock_redis.set("oci:free_tier:volumes", json.dumps(mock_volumes_data))
 
     with patch("app.services.cache.get_redis_client", return_value=mock_redis):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            response = await ac.get("/api/v1/storage/volumes")
-            assert response.status_code == 200
-            data = response.json()
-            assert len(data) == 2
-            orphans = [v for v in data if v["is_orphan"]]
-            assert len(orphans) == 1
-            assert orphans[0]["id"] == "ocid1.bootvolume.oc1..bv2_orphan"
+            # 1. Anonymous visitor gets masked data
+            guest_resp = await ac.get("/api/v1/storage/volumes")
+            assert guest_resp.status_code == 200
+            guest_data = guest_resp.json()
+            assert len(guest_data) == 2
+            guest_orphans = [v for v in guest_data if v["is_orphan"]]
+            assert len(guest_orphans) == 1
+            assert "..." in guest_orphans[0]["id"]
+            assert guest_orphans[0]["id"].endswith("phan")
+
+            # 2. Admin gets unmasked original data
+            token = create_access_token({"sub": "admin"})
+            admin_resp = await ac.get("/api/v1/storage/volumes", headers={"Authorization": f"Bearer {token}"})
+            assert admin_resp.status_code == 200
+            admin_data = admin_resp.json()
+            admin_orphans = [v for v in admin_data if v["is_orphan"]]
+            assert admin_orphans[0]["id"] == "ocid1.bootvolume.oc1..bv2_orphan"
 
 
 @pytest.mark.asyncio
 async def test_get_network_inventory_endpoint(mock_redis):
-    """Test GET /api/v1/network/inventory returns VCNs, Public IPs and LBs."""
+    """Test GET /api/v1/network/inventory masks for visitors and unmasks for admin."""
     from app.main import app
+    from app.services.security import create_access_token
 
     sample_net = {
         "vcns": [{"id": "vcn1", "display_name": "prod-vcn", "cidr_block": "10.0.0.0/16"}],
@@ -180,17 +200,28 @@ async def test_get_network_inventory_endpoint(mock_redis):
 
     with patch("app.services.cache.get_redis_client", return_value=mock_redis):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            response = await ac.get("/api/v1/network/inventory")
-            assert response.status_code == 200
-            data = response.json()
-            assert len(data["vcns"]) == 1
-            assert data["vcns"][0]["display_name"] == "prod-vcn"
+            # Guest check (masked)
+            guest_resp = await ac.get("/api/v1/network/inventory")
+            assert guest_resp.status_code == 200
+            guest_data = guest_resp.json()
+            assert len(guest_data["vcns"]) == 1
+            assert "***" in guest_data["vcns"][0]["display_name"]
+            assert guest_data["public_ips"][0]["ip_address"] == "***.***.***.10"
+
+            # Admin check (unmasked)
+            token = create_access_token({"sub": "admin"})
+            admin_resp = await ac.get("/api/v1/network/inventory", headers={"Authorization": f"Bearer {token}"})
+            assert admin_resp.status_code == 200
+            admin_data = admin_resp.json()
+            assert admin_data["vcns"][0]["display_name"] == "prod-vcn"
+            assert admin_data["public_ips"][0]["ip_address"] == "129.148.1.10"
 
 
 @pytest.mark.asyncio
 async def test_get_database_inventory_endpoint(mock_redis):
-    """Test GET /api/v1/database/inventory returns list of Autonomous DBs."""
+    """Test GET /api/v1/database/inventory masks for visitors and unmasks for admin."""
     from app.main import app
+    from app.services.security import create_access_token
 
     sample_dbs = [
         {"id": "db1", "display_name": "app-db", "db_name": "appdb", "is_free_tier": True, "cpu_core_count": 1, "data_storage_size_in_gbs": 20, "db_workload": "OLTP", "lifecycle_state": "AVAILABLE"}
@@ -199,11 +230,19 @@ async def test_get_database_inventory_endpoint(mock_redis):
 
     with patch("app.services.cache.get_redis_client", return_value=mock_redis):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            response = await ac.get("/api/v1/database/inventory")
-            assert response.status_code == 200
-            data = response.json()
-            assert len(data) == 1
-            assert data[0]["db_name"] == "appdb"
+            # Guest check
+            guest_resp = await ac.get("/api/v1/database/inventory")
+            assert guest_resp.status_code == 200
+            guest_data = guest_resp.json()
+            assert len(guest_data) == 1
+            assert "***" in guest_data[0]["db_name"]
+
+            # Admin check
+            token = create_access_token({"sub": "admin"})
+            admin_resp = await ac.get("/api/v1/database/inventory", headers={"Authorization": f"Bearer {token}"})
+            assert admin_resp.status_code == 200
+            admin_data = admin_resp.json()
+            assert admin_data[0]["db_name"] == "appdb"
 
 
 @pytest.mark.asyncio

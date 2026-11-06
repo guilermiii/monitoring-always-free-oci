@@ -1,7 +1,27 @@
 import React from 'react';
-import { RefreshCw, Cloud, Activity, CheckCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
+import {
+  RefreshCw,
+  Cloud,
+  Activity,
+  CheckCircle,
+  AlertTriangle,
+  ShieldCheck,
+  Lock,
+  LogOut,
+  Eye
+} from 'lucide-react';
 
-export default function Header({ tenancy, collectedAt, apiUsage, isRefreshing, onRefresh, connectionStatus }) {
+export default function Header({
+  tenancy,
+  collectedAt,
+  apiUsage,
+  isRefreshing,
+  onRefresh,
+  isAdmin,
+  user,
+  onLogout,
+  onOpenLogin,
+}) {
   const formatTime = (isoString) => {
     if (!isoString) return 'Nunca';
     try {
@@ -34,13 +54,29 @@ export default function Header({ tenancy, collectedAt, apiUsage, isRefreshing, o
             <Cloud className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold tracking-tight text-white">OCI Always Free Monitor</h1>
+              
+              {/* Cluster Cloud Badge */}
               <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 Ativo
               </span>
+
+              {/* Mode Badge (Admin vs Portfolio Guest) */}
+              {isAdmin ? (
+                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  Admin: {user || 'admin'}
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 flex items-center gap-1.5" title="Visualização pública em modo portfólio (dados protegidos)">
+                  <Eye className="w-3.5 h-3.5 text-indigo-400" />
+                  Portfólio (Leitura)
+                </span>
+              )}
             </div>
+
             <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
               <span>Tenancy: <strong className="text-slate-200">{tenancy?.name || 'Carregando...'}</strong></span>
               <span>•</span>
@@ -82,6 +118,28 @@ export default function Header({ tenancy, collectedAt, apiUsage, isRefreshing, o
             <p className="text-xs font-medium text-slate-200 font-mono">{formatTime(collectedAt)}</p>
           </div>
 
+          {/* Admin Login / Logout Action */}
+          {isAdmin ? (
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white bg-[#0D1117] hover:bg-slate-800 border border-[#30363D] transition-all"
+              title="Encerrar sessão administrativa"
+            >
+              <LogOut className="w-3.5 h-3.5 text-slate-400" />
+              <span>Sair</span>
+            </button>
+          ) : (
+            <button
+              onClick={onOpenLogin}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white bg-[#0D1117] hover:bg-slate-800 border border-[#30363D] transition-all"
+              title="Acesso exclusivo para o proprietário"
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-400" />
+              <span>Login Admin</span>
+            </button>
+          )}
+
+          {/* Sync Button */}
           <button
             onClick={onRefresh}
             disabled={isRefreshing}
@@ -90,6 +148,7 @@ export default function Header({ tenancy, collectedAt, apiUsage, isRefreshing, o
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
                 : 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/20 hover:shadow-red-900/40 border border-red-500/50 active:scale-95'
             }`}
+            title={isAdmin ? "Forçar varredura imediata na OCI" : "A sincronização sob demanda requer login de administrador"}
           >
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             <span>{isRefreshing ? 'Sincronizando...' : 'Sincronizar Agora'}</span>

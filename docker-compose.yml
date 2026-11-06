@@ -2,8 +2,10 @@ services:
   redis:
     image: redis:7-alpine
     container_name: oci-redis
-    command: redis-server --save "" --appendonly no
+    command: redis-server --appendonly yes --dir /data
     restart: unless-stopped
+    volumes:
+      - oci-redis-data:/data
     networks:
       - oci-net
 
@@ -41,11 +43,17 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - REFRESH_INTERVAL_SECONDS=600
       - CACHE_TTL_SECONDS=900
-      - OCI_CONFIG_FILE=/root/.oci/config
+      - OCI_CONFIG_FILE=/home/appuser/.oci/config
       - OCI_CONFIG_PROFILE=DEFAULT
+      - PORTFOLIO_MODE=true
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin
+      - PERSISTENT_DATA_DIR=/app/data
     volumes:
-      - ${HOME}/.oci:/root/.oci:ro
-      - ${HOME}/.ssh:/root/.ssh:ro
+      - ${HOME}/.oci:/home/appuser/.oci:ro
+      - ${HOME}/.ssh:/home/appuser/.ssh:ro
+      - ${HOME}/.oci:/etc/oci:ro
+      - oci-backend-data:/app/data
     ports:
       - "8000:8000"
     depends_on:
@@ -69,3 +77,8 @@ services:
 networks:
   oci-net:
     driver: bridge
+
+volumes:
+  oci-redis-data:
+  oci-backend-data:
+

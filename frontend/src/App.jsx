@@ -10,6 +10,8 @@ import {
   ShieldCheck,
   AlertCircle,
   RefreshCw,
+  ShieldAlert,
+  Lock,
 } from 'lucide-react';
 import Header from './components/Header';
 import MetricCard from './components/MetricCard';
@@ -17,8 +19,18 @@ import OrphanAlert from './components/OrphanAlert';
 import OrphanIpAlert from './components/OrphanIpAlert';
 import BurnRateCard from './components/BurnRateCard';
 import ResourceInventory from './components/ResourceInventory';
+import LoginModal from './components/LoginModal';
+import LockScreen from './components/LockScreen';
+import { AuthProvider, useAuth } from './context/AuthContext';
 
-export default function App() {
+function Dashboard() {
+  const { isAdmin, user, logout } = useAuth();
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/portfolio')) {
+      return 'portfolio';
+    }
+    return 'gate';
+  });
   const [summary, setSummary] = useState(null);
   const [volumes, setVolumes] = useState([]);
   const [networkInv, setNetworkInv] = useState({ vcns: [], public_ips: [], unassigned_ips: [], load_balancers: [] });
@@ -27,6 +39,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [syncWarning, setSyncWarning] = useState(null);
 
   const fetchData = async () => {
     try {
@@ -65,11 +79,26 @@ export default function App() {
     }
   };
 
-  const handleForceRefresh = async () => {
+  const handleSyncClick = async () => {
+    if (!isAdmin) {
+      setSyncWarning(
+        'A sincronização direta contra as APIs da Oracle Cloud é restrita ao administrador para proteger as cotas da nuvem. O dashboard é atualizado automaticamente a cada 10 minutos.'
+      );
+      setIsLoginModalOpen(true);
+      return;
+    }
+
     setRefreshing(true);
+    setSyncWarning(null);
     try {
       const res = await fetch('/api/v1/refresh', { method: 'POST' });
-      if (!res.ok) throw new Error('Falha na sincronização imediata');
+      if (!res.ok) {
+        if (res.status === 401) {
+          setIsLoginModalOpen(true);
+          throw new Error('Sessão expirada. Faça login novamente.');
+        }
+        throw new Error('Falha na sincronização imediata');
+      }
       await fetchData();
     } catch (err) {
       console.error(err);
@@ -82,7 +111,7 @@ export default function App() {
     fetchData();
     const interval = setInterval(fetchData, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAdmin]);
 
   const scrollToSection = (tabName) => {
     setActiveTab(tabName);
@@ -91,6 +120,28 @@ export default function App() {
       el.scrollIntoView({ behavior: 'smooth' });
     }
   };
+
+  const handleLogout = async () => {
+    await logout();
+    setViewMode('gate');
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', '/');
+    }
+  };
+
+  // Se o usuário não for administrador e a rota for a tela de bloqueio, exibe a Trava de Acesso
+  if (!isAdmin && viewMode === 'gate') {
+    return (
+      <LockScreen
+        onEnterPortfolio={() => {
+          setViewMode('portfolio');
+          if (typeof window !== 'undefined') {
+            window.history.pushState({}, '', '/portfolio');
+          }
+        }}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -122,10 +173,50 @@ export default function App() {
         collectedAt={summary?.collected_at}
         apiUsage={summary?.api_usage}
         isRefreshing={refreshing}
-        onRefresh={handleForceRefresh}
+        onRefresh={handleSyncClick}
+        isAdmin={isAdmin}
+        user={user}
+        onLogout={handleLogout}
+        onOpenLogin={() => {
+          setSyncWarning(null);
+          setIsLoginModalOpen(true);
+        }}
       />
 
-      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 space-y-10 flex-1">
+      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 space-y-8 flex-1">
+        {/* Portfolio Mode Notice Banner for Visitors */}
+        {!isAdmin && (
+          <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
+              <span>
+                <strong>Modo Portfólio (Cluster Kubernetes ARM):</strong> Os dados de infraestrutura, OCIDs e identificadores foram anonimizados para proteção contra ataques. O coletor assíncrono atualiza o cache automaticamente a cada 10 minutos.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+              <button
+                onClick={() => {
+                  setViewMode('gate');
+                  if (typeof window !== 'undefined') window.history.pushState({}, '', '/');
+                }}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+              >
+                Voltar à Trava
+              </button>
+              <button
+                onClick={() => {
+                  setSyncWarning(null);
+                  setIsLoginModalOpen(true);
+                }}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 flex items-center gap-1.5 transition-colors"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Login Admin</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Error notification if any */}
         {error && (
           <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm flex items-center justify-between">
@@ -460,10 +551,25 @@ export default function App() {
         />
       </main>
 
+      {/* Login Modal */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={() => fetchData()}
+      />
+
       {/* Footer */}
       <footer className="border-t border-[#22272E] py-6 text-center text-xs text-slate-500">
         OCI Always Free Monitor • Visibilidade completa de Compute, Armazenamento, Rede e Bancos de Dados.
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Dashboard />
+    </AuthProvider>
   );
 }

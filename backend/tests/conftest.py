@@ -9,11 +9,62 @@ if str(backend_path) not in sys.path:
     sys.path.insert(0, str(backend_path))
 
 
+class MockPipeline:
+    """Mock pipeline supporting atomic commands."""
+    def __init__(self, redis_instance):
+        self.redis = redis_instance
+        self.commands = []
+
+    def zremrangebyscore(self, key: str, min_val: float, max_val: float):
+        self.commands.append(("zremrangebyscore", (key, min_val, max_val)))
+        return self
+
+    def zcard(self, key: str):
+        self.commands.append(("zcard", (key,)))
+        return self
+
+    def expire(self, key: str, time: int):
+        self.commands.append(("expire", (key, time)))
+        return self
+
+    def incr(self, key: str):
+        self.commands.append(("incr", (key,)))
+        return self
+
+    async def execute(self):
+        results = []
+        for cmd, args in self.commands:
+            if cmd == "zremrangebyscore":
+                key, min_v, max_v = args
+                zset = self.redis._zsets.setdefault(key, {})
+                to_del = [m for m, s in zset.items() if min_v <= s <= max_v]
+                for m in to_del:
+                    del zset[m]
+                results.append(len(to_del))
+            elif cmd == "zcard":
+                key = args[0]
+                results.append(len(self.redis._zsets.get(key, {})))
+            elif cmd == "expire":
+                key, t = args
+                self.redis._ttls[key] = t
+                results.append(True)
+            elif cmd == "incr":
+                key = args[0]
+                val = int(self.redis._store.get(key, 0) or 0) + 1
+                self.redis._store[key] = str(val)
+                results.append(val)
+        return results
+
+
 class MockRedis:
     """Async in-memory mock for Redis."""
     def __init__(self):
         self._store = {}
         self._ttls = {}
+        self._zsets = {}
+
+    def pipeline(self):
+        return MockPipeline(self)
 
     async def get(self, key: str):
         return self._store.get(key)
@@ -24,19 +75,43 @@ class MockRedis:
             self._ttls[key] = ex
         return True
 
+    async def setex(self, key: str, seconds: int, value: str):
+        self._store[key] = str(value)
+        self._ttls[key] = seconds
+        return True
+
     async def incrby(self, key: str, amount: int = 1):
         current = int(self._store.get(key, 0) or 0)
         current += amount
         self._store[key] = str(current)
         return current
 
+    async def zadd(self, key: str, mapping: dict):
+        zset = self.redis_zset(key)
+        for member, score in mapping.items():
+            zset[member] = float(score)
+        return len(mapping)
+
+    def redis_zset(self, key: str):
+        if key not in self._zsets:
+            self._zsets[key] = {}
+        return self._zsets[key]
+
     async def expire(self, key: str, time: int):
         self._ttls[key] = time
         return True
 
+    async def exists(self, key: str):
+        return 1 if (key in self._store or key in self._zsets) else 0
+
+    async def ttl(self, key: str):
+        return self._ttls.get(key, 60)
+
     async def delete(self, key: str):
         if key in self._store:
             del self._store[key]
+        if key in self._zsets:
+            del self._zsets[key]
         return True
 
     async def ping(self):
@@ -44,6 +119,7 @@ class MockRedis:
 
     async def aclose(self):
         pass
+
 
 
 @pytest.fixture

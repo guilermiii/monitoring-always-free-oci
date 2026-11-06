@@ -9,6 +9,10 @@ from app.config import (
     OCI_API_RATE_LIMIT_PER_MIN,
 )
 from app.services.oci_collector import get_status_color
+from app.services.api_usage_store import (
+    save_persistent_usage,
+    load_persistent_usage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,17 +142,23 @@ async def set_cached_database(data: List[Dict[str, Any]], ttl: int = CACHE_TTL_S
 
 
 async def record_api_calls(calls_count: int) -> Dict[str, Any]:
-    """Records calls made during a collection run and returns updated daily quota status."""
-    today_key = f"{KEY_API_CALLS_PREFIX}:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+    """Records calls made during a collection run and returns updated daily quota status, persisting to disk."""
+    now_utc = datetime.now(timezone.utc)
+    today_str = now_utc.strftime("%Y-%m-%d")
+    today_key = f"{KEY_API_CALLS_PREFIX}:{today_str}"
     calls_today = calls_count
+
     try:
         client = get_redis_client()
         calls_today = await client.incrby(today_key, calls_count)
-        # 48h TTL
+        # 48h TTL in Redis
         await client.expire(today_key, 86400 * 2)
         await client.set(KEY_API_CALLS_LAST_RUN, str(calls_count), ex=86400 * 2)
     except Exception as e:
         logger.error(f"Error recording API calls in Redis: {e}")
+
+    # Persist atomically to disk volume for survivability across restarts
+    save_persistent_usage(calls_today=calls_today, calls_last_run=calls_count, date_str=today_str)
 
     percentage = round((calls_today / OCI_API_DAILY_LIMIT) * 100, 2) if OCI_API_DAILY_LIMIT > 0 else 0.0
     return {
@@ -162,22 +172,39 @@ async def record_api_calls(calls_count: int) -> Dict[str, Any]:
 
 
 async def get_api_usage(calls_last_run: Optional[int] = None) -> Dict[str, Any]:
-    """Retrieves current daily API usage stats from Redis."""
-    today_key = f"{KEY_API_CALLS_PREFIX}:{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+    """Retrieves current daily API usage stats from Redis, falling back to persistent disk store."""
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_key = f"{KEY_API_CALLS_PREFIX}:{today_str}"
     calls_today = 0
     last_run = calls_last_run
+
     try:
         client = get_redis_client()
         raw_today = await client.get(today_key)
-        if raw_today:
+        if raw_today is not None:
             calls_today = int(raw_today)
+        else:
+            # Fallback to persistent disk if Redis was flushed/restarted
+            saved = load_persistent_usage(today_str)
+            if saved and "calls_today" in saved:
+                calls_today = int(saved["calls_today"])
+                # Re-seed Redis
+                await client.set(today_key, str(calls_today), ex=86400 * 2)
+                if last_run is None:
+                    last_run = saved.get("calls_last_run", 0)
+                    await client.set(KEY_API_CALLS_LAST_RUN, str(last_run), ex=86400 * 2)
+
         if last_run is None:
             raw_last = await client.get(KEY_API_CALLS_LAST_RUN)
             last_run = int(raw_last) if raw_last else 0
     except Exception as e:
         logger.error(f"Error getting API usage from Redis: {e}")
-        if last_run is None:
-            last_run = 0
+        # Fallback to disk if Redis is unreachable
+        saved = load_persistent_usage(today_str)
+        if saved:
+            calls_today = saved.get("calls_today", 0)
+            if last_run is None:
+                last_run = saved.get("calls_last_run", 0)
 
     percentage = round((calls_today / OCI_API_DAILY_LIMIT) * 100, 2) if OCI_API_DAILY_LIMIT > 0 else 0.0
     return {

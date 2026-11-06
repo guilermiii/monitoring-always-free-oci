@@ -15,7 +15,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app/ ./app
+# Create non-privileged user and group for Kubernetes Pod Security Standard (Restricted)
+RUN groupadd -g 1000 appgroup && \
+    useradd -u 1000 -g appgroup -m -s /bin/bash appuser && \
+    mkdir -p /app/data /home/appuser/.oci /home/appuser/.ssh && \
+    chown -R appuser:appgroup /app /home/appuser
+
+COPY --chown=appuser:appgroup app/ ./app
+
+USER 1000:1000
 
 EXPOSE 8000
 
