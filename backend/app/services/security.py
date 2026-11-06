@@ -351,3 +351,27 @@ def mask_database_inventory(databases: Optional[List[Dict[str, Any]]]) -> Option
             d["connection_strings"] = None
         sanitized_list.append(d)
     return sanitized_list
+
+
+def mask_instances_data(instances: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+    """
+    Aggressively masks compute instances inventory for public visitors.
+    Masks OCIDs and private display names, while preserving architecture, OCPUs and memory specs.
+    """
+    if not instances or not isinstance(instances, list):
+        return instances
+
+    sanitized_list = []
+    for inst in instances:
+        i = copy.deepcopy(inst)
+        if "id" in i:
+            i["id"] = mask_ocid(i["id"])
+        if "display_name" in i:
+            i["display_name"] = mask_display_name(i["display_name"], "vm")
+        if "compartment_name" in i and i["compartment_name"] != "root":
+            i["compartment_name"] = "comp-***"
+        if "compartment_id" in i and i["compartment_id"]:
+            i["compartment_id"] = mask_ocid(i["compartment_id"])
+        sanitized_list.append(i)
+    return sanitized_list
+

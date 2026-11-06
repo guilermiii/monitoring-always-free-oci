@@ -156,31 +156,59 @@ def process_block_storage_inventory(
     }
 
 
-def process_compute_inventory(instances: List[Any]) -> Dict[str, Any]:
+def process_compute_inventory(
+    instances: List[Any],
+    compartment_map: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
     """
     Aggregates Ampere A1 (Arm) OCPUs / RAM and counts active AMD Micro instances.
+    Also extracts instances detail for inventory table (Nome, Arquitetura, CPU, Memória, Compartment).
     """
-    running_instances = [
-        inst for inst in instances
-        if getattr(inst, "lifecycle_state", None) == "RUNNING"
-    ]
-
     ampere_ocpus = 0.0
     ampere_memory_gb = 0.0
     ampere_count = 0
-
     micro_count = 0
 
-    for inst in running_instances:
+    instances_detail = []
+    for inst in instances:
+        state = getattr(inst, "lifecycle_state", "RUNNING")
+        if state in {"TERMINATED", "TERMINATING"}:
+            continue
+
         shape = getattr(inst, "shape", "")
+        config = getattr(inst, "shape_config", None)
+
         if shape == "VM.Standard.A1.Flex":
-            ampere_count += 1
-            config = getattr(inst, "shape_config", None)
-            if config:
-                ampere_ocpus += float(getattr(config, "ocpus", 0) or 0)
-                ampere_memory_gb += float(getattr(config, "memory_in_gbs", 0) or 0)
+            arch = "ARM (Ampere A1 Flex)"
+            ocpus = float(getattr(config, "ocpus", 0) or 0)
+            mem = float(getattr(config, "memory_in_gbs", 0) or 0)
+            if state == "RUNNING":
+                ampere_count += 1
+                ampere_ocpus += ocpus
+                ampere_memory_gb += mem
         elif shape == "VM.Standard.E2.1.Micro":
-            micro_count += 1
+            arch = "AMD (Micro)"
+            ocpus = float(getattr(config, "ocpus", 1.0) or 1.0)
+            mem = float(getattr(config, "memory_in_gbs", 1.0) or 1.0)
+            if state == "RUNNING":
+                micro_count += 1
+        else:
+            arch = shape
+            ocpus = float(getattr(config, "ocpus", 0) or 0) if config else 0.0
+            mem = float(getattr(config, "memory_in_gbs", 0) or 0) if config else 0.0
+
+        instances_detail.append({
+            "id": getattr(inst, "id", ""),
+            "display_name": getattr(inst, "display_name", "Compute Instance"),
+            "architecture": arch,
+            "shape": shape,
+            "ocpus": ocpus,
+            "memory_gb": mem,
+            "compartment_id": getattr(inst, "compartment_id", ""),
+            "compartment_name": (compartment_map or {}).get(getattr(inst, "compartment_id", ""), "root"),
+            "lifecycle_state": state,
+            "time_created": str(getattr(inst, "time_created", "")),
+        })
 
     ampere_limit_ocpus = 4.0
     ampere_limit_memory = 24.0
@@ -208,7 +236,8 @@ def process_compute_inventory(instances: List[Any]) -> Dict[str, Any]:
             "active_instances": micro_count,
             "limit_instances": micro_limit,
             "status": micro_status,
-        }
+        },
+        "instances_detail": instances_detail,
     }
 
 
@@ -804,7 +833,8 @@ class OCICollector:
         all_volumes_detail = storage_result.pop("all_volumes", [])
         orphan_volumes = storage_result.pop("orphan_volumes", [])
 
-        compute_result = process_compute_inventory(all_instances)
+        compute_result = process_compute_inventory(all_instances, comp_map)
+        instances_detail = compute_result.pop("instances_detail", [])
         obj_result = process_object_storage_inventory(all_buckets)
 
         # 5. Process Network, Load Balancers, Bastion & Database
@@ -906,4 +936,4 @@ class OCICollector:
             "load_balancers": lbs_detail,
         }
 
-        return summary_payload, all_volumes_detail, network_inventory, databases_detail
+        return summary_payload, all_volumes_detail, network_inventory, databases_detail, instances_detail

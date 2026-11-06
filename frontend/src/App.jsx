@@ -25,6 +25,28 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 
 function Dashboard() {
   const { isAdmin, user, logout } = useAuth();
+  const [theme, setTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') || 'light';
+    }
+    return 'light';
+  });
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    try {
+      localStorage.setItem('theme', theme);
+    } catch (e) {}
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   const [viewMode, setViewMode] = useState(() => {
     if (typeof window !== 'undefined' && window.location.pathname.startsWith('/portfolio')) {
       return 'portfolio';
@@ -32,10 +54,11 @@ function Dashboard() {
     return 'gate';
   });
   const [summary, setSummary] = useState(null);
+  const [instances, setInstances] = useState([]);
   const [volumes, setVolumes] = useState([]);
   const [networkInv, setNetworkInv] = useState({ vcns: [], public_ips: [], unassigned_ips: [], load_balancers: [] });
   const [databaseInv, setDatabaseInv] = useState([]);
-  const [activeTab, setActiveTab] = useState('volumes');
+  const [activeTab, setActiveTab] = useState('instances');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -45,11 +68,12 @@ function Dashboard() {
   const fetchData = async () => {
     try {
       setError(null);
-      const [sumRes, volRes, netRes, dbRes] = await Promise.all([
+      const [sumRes, volRes, netRes, dbRes, instRes] = await Promise.all([
         fetch('/api/v1/summary'),
         fetch('/api/v1/storage/volumes'),
         fetch('/api/v1/network/inventory'),
         fetch('/api/v1/database/inventory'),
+        fetch('/api/v1/compute/instances'),
       ]);
 
       if (!sumRes.ok) {
@@ -69,6 +93,10 @@ function Dashboard() {
       if (dbRes.ok) {
         const dbData = await dbRes.json();
         setDatabaseInv(dbData);
+      }
+      if (instRes.ok) {
+        const instData = await instRes.json();
+        setInstances(instData);
       }
     } catch (err) {
       console.error(err);
@@ -167,7 +195,7 @@ function Dashboard() {
   const network = summary?.network || {};
 
   return (
-    <div className="min-h-screen bg-[#0D1117] flex flex-col selection:bg-red-500 selection:text-white">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0D1117] text-slate-800 dark:text-slate-100 flex flex-col selection:bg-red-500 selection:text-white transition-colors duration-200">
       <Header
         tenancy={summary?.tenancy}
         collectedAt={summary?.collected_at}
@@ -181,14 +209,16 @@ function Dashboard() {
           setSyncWarning(null);
           setIsLoginModalOpen(true);
         }}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 space-y-8 flex-1">
         {/* Portfolio Mode Notice Banner for Visitors */}
         {!isAdmin && (
-          <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
             <div className="flex items-center gap-3">
-              <ShieldAlert className="w-5 h-5 text-indigo-400 shrink-0" />
+              <ShieldAlert className="w-5 h-5 text-indigo-500 dark:text-indigo-400 shrink-0" />
               <span>
                 <strong>Modo Portfólio (Cluster Kubernetes ARM):</strong> Os dados de infraestrutura, OCIDs e identificadores foram anonimizados para proteção contra ataques. O coletor assíncrono atualiza o cache automaticamente a cada 10 minutos.
               </span>
@@ -199,7 +229,7 @@ function Dashboard() {
                   setViewMode('gate');
                   if (typeof window !== 'undefined') window.history.pushState({}, '', '/');
                 }}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors"
               >
                 Voltar à Trava
               </button>
@@ -208,7 +238,7 @@ function Dashboard() {
                   setSyncWarning(null);
                   setIsLoginModalOpen(true);
                 }}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 flex items-center gap-1.5 transition-colors"
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-700 dark:text-indigo-200 flex items-center gap-1.5 transition-colors"
               >
                 <Lock className="w-3.5 h-3.5" />
                 <span>Login Admin</span>
@@ -219,9 +249,9 @@ function Dashboard() {
 
         {/* Error notification if any */}
         {error && (
-          <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm flex items-center justify-between">
+          <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-sm flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-rose-400" />
+              <AlertCircle className="w-5 h-5 text-rose-500 dark:text-rose-400" />
               <span>{error}</span>
             </div>
             <button
@@ -247,10 +277,19 @@ function Dashboard() {
           />
         </div>
 
-        {/* 1. SEÇÃO: Compute & Armazenamento */}
+        {/* 1. SEÇÃO: Projeção Mensal & Taxa de Queima (Primeira Fileira Isolada) */}
+        <div className="w-full">
+          <BurnRateCard
+            burnRate={burnRate}
+            computeAmpere={computeAmpere}
+            network={network}
+          />
+        </div>
+
+        {/* 2. SEÇÃO: Compute & Armazenamento */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-            <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-red-500"></span>
               Compute & Armazenamento
             </h2>
@@ -271,40 +310,60 @@ function Dashboard() {
             >
               <div className="flex justify-between">
                 <span>Boot Volumes:</span>
-                <span className="text-slate-200 font-medium">{blockStorage.boot_volumes_count || 0}</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">{blockStorage.boot_volumes_count || 0}</span>
               </div>
               <div className="flex justify-between">
                 <span>Block Volumes:</span>
-                <span className="text-slate-200 font-medium">{blockStorage.block_volumes_count || 0}</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">{blockStorage.block_volumes_count || 0}</span>
               </div>
               {blockStorage.orphan_volumes_count > 0 && (
-                <div className="flex justify-between text-amber-400 font-medium">
+                <div className="flex justify-between text-amber-600 dark:text-amber-400 font-medium">
                   <span>Discos Órfãos:</span>
                   <span>{blockStorage.orphan_volumes_count} ({blockStorage.orphan_wasted_gb} GB)</span>
                 </div>
               )}
             </MetricCard>
 
-            {/* Compute Ampere A1 */}
+            {/* Compute Ampere A1 (Arm) */}
             <MetricCard
               title="Compute Ampere A1 (Arm)"
-              subtitle="Instâncias Flex (4 OCPUs / 24 GB)"
+              subtitle={"Instâncias Flex\n(4 OCPUs / 24 GB)"}
               icon={Cpu}
-              used={`${computeAmpere.ocpus_allocated || 0} OCPU`}
-              limit={`${computeAmpere.limit_ocpus || 4} OCPUs`}
-              unit=""
-              percentage={((computeAmpere.ocpus_allocated || 0) / (computeAmpere.limit_ocpus || 4)) * 100}
+              percentage={Math.max(
+                ((computeAmpere.ocpus_allocated || 0) / (computeAmpere.limit_ocpus || 4)) * 100,
+                ((computeAmpere.memory_gb_allocated || 0) / (computeAmpere.limit_memory_gb || 24)) * 100
+              )}
               status={computeAmpere.status}
+              dualBars={[
+                {
+                  label: 'CPU (OCPUs)',
+                  used: `${computeAmpere.ocpus_allocated || 0} OCPU`,
+                  limit: `${computeAmpere.limit_ocpus || 4} OCPUs`,
+                  percentage: ((computeAmpere.ocpus_allocated || 0) / (computeAmpere.limit_ocpus || 4)) * 100,
+                  barColor: ((computeAmpere.ocpus_allocated || 0) / (computeAmpere.limit_ocpus || 4)) >= 0.9 ? 'bg-rose-500' : 'bg-emerald-500',
+                },
+                {
+                  label: 'Memória RAM',
+                  used: `${computeAmpere.memory_gb_allocated || 0} GB`,
+                  limit: `${computeAmpere.limit_memory_gb || 24} GB`,
+                  percentage: ((computeAmpere.memory_gb_allocated || 0) / (computeAmpere.limit_memory_gb || 24)) * 100,
+                  barColor: ((computeAmpere.memory_gb_allocated || 0) / (computeAmpere.limit_memory_gb || 24)) >= 0.9 ? 'bg-rose-500' : 'bg-emerald-500',
+                },
+              ]}
             >
               <div className="flex justify-between">
-                <span>RAM Alocada:</span>
-                <span className="text-slate-200 font-medium">
-                  {computeAmpere.memory_gb_allocated || 0} / {computeAmpere.limit_memory_gb || 24} GB
+                <span>Status:</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">
+                  {((computeAmpere.ocpus_allocated || 0) < 4 && (computeAmpere.memory_gb_allocated || 0) < 24) ? 'Slots Livres' : 'Limite Atingido'}
                 </span>
               </div>
               <div className="flex justify-between">
+                <span>Permitido:</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">Até 4 OCPUs / 24 GB gratuitos</span>
+              </div>
+              <div className="flex justify-between">
                 <span>Instâncias Ativas:</span>
-                <span className="text-slate-200 font-medium">{computeAmpere.instances_count || 0}</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">{computeAmpere.instances_count || 0}</span>
               </div>
             </MetricCard>
 
@@ -321,13 +380,13 @@ function Dashboard() {
             >
               <div className="flex justify-between">
                 <span>Status:</span>
-                <span className="text-slate-200 font-medium">
+                <span className="text-slate-800 dark:text-slate-200 font-medium">
                   {(computeMicro.active_instances || 0) < 2 ? 'Slots Livres' : 'Limite Atingido'}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span>Permitido:</span>
-                <span className="text-slate-200 font-medium">Até 2 VMs gratuitas</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">Até 2 VMs gratuitas</span>
               </div>
             </MetricCard>
 
@@ -344,20 +403,20 @@ function Dashboard() {
             >
               <div className="flex justify-between">
                 <span>Tier Arquivo/Infreq.:</span>
-                <span className="text-slate-200 font-medium">{objectStorage.archive_gb || 0} / 10 GB</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">{objectStorage.archive_gb || 0} / 10 GB</span>
               </div>
               <div className="flex justify-between">
                 <span>Total de Buckets:</span>
-                <span className="text-slate-200 font-medium">{objectStorage.bucket_count || 0}</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">{objectStorage.bucket_count || 0}</span>
               </div>
             </MetricCard>
           </div>
         </div>
 
-        {/* 2. SEÇÃO: Rede & Conectividade Always Free */}
+        {/* 3. SEÇÃO: Rede & Conectividade Always Free */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-            <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-blue-500"></span>
               Rede & Conectividade Always Free
             </h2>
@@ -378,11 +437,11 @@ function Dashboard() {
             >
               <div className="flex justify-between">
                 <span>Permitido:</span>
-                <span className="text-slate-200 font-medium">Até 2 VCNs gratuitas</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">Até 2 VCNs gratuitas</span>
               </div>
               <div className="flex justify-between">
                 <span>Sub-redes IPv4/IPv6:</span>
-                <span className="text-slate-200 font-medium">Inclusas</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">Inclusas</span>
               </div>
             </MetricCard>
 
@@ -399,45 +458,45 @@ function Dashboard() {
             >
               {/* Mini cards lado a lado */}
               <div className="grid grid-cols-2 gap-2 pb-1">
-                <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
                     <span className="w-2 h-2 rounded-full bg-amber-400"></span>
                     <span>IP Fixo Reservado</span>
                   </div>
                   <div className="mt-1 flex items-baseline gap-1 font-mono">
-                    <span className="text-base font-bold text-white">{publicIp.reserved_count || 0}</span>
+                    <span className="text-base font-bold text-slate-900 dark:text-white">{publicIp.reserved_count || 0}</span>
                     <span className="text-xs text-slate-500">/ {publicIp.reserved_limit || 1}</span>
-                    <span className="text-[10px] text-amber-400/90 ml-auto font-sans">Gratuito</span>
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400/90 ml-auto font-sans">Gratuito</span>
                   </div>
                 </div>
 
-                <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800">
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
                     <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
                     <span>IPs Efêmeros</span>
                   </div>
                   <div className="mt-1 flex items-baseline gap-1 font-mono">
-                    <span className="text-base font-bold text-cyan-300">{publicIp.ephemeral_count || 0}</span>
-                    <span className="text-[10px] text-slate-400 ml-auto font-sans">Em uso</span>
+                    <span className="text-base font-bold text-cyan-600 dark:text-cyan-300">{publicIp.ephemeral_count || 0}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 ml-auto font-sans">Em uso</span>
                   </div>
                 </div>
               </div>
 
               {/* Total & Vínculo */}
-              <div className="flex justify-between items-center text-xs pt-1 border-t border-slate-800/60">
-                <span className="text-slate-400">Total de IPs Ativos:</span>
-                <span className="font-mono font-bold text-slate-200">
+              <div className="flex justify-between items-center text-xs pt-1 border-t border-slate-200 dark:border-slate-800/60">
+                <span className="text-slate-600 dark:text-slate-400">Total de IPs Ativos:</span>
+                <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
                   {(publicIp.reserved_count || 0) + (publicIp.ephemeral_count || 0)}
                 </span>
               </div>
 
               {publicIp.unassigned_reserved_count > 0 ? (
-                <div className="flex justify-between items-center text-rose-400 font-semibold bg-rose-500/10 px-2 py-1 rounded border border-rose-500/20 text-xs">
+                <div className="flex justify-between items-center text-rose-600 dark:text-rose-400 font-semibold bg-rose-500/10 px-2 py-1 rounded border border-rose-500/20 text-xs">
                   <span>IP Fixo Ocioso:</span>
                   <span>{publicIp.unassigned_reserved_count} Desvinculado</span>
                 </div>
               ) : (
-                <div className="flex justify-between items-center text-emerald-400 text-xs">
+                <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400 text-xs">
                   <span>Status de Vínculo:</span>
                   <span>Todos Vinculados</span>
                 </div>
@@ -457,11 +516,11 @@ function Dashboard() {
             >
               <div className="flex justify-between">
                 <span>Flexible LB (10 Mbps):</span>
-                <span className="text-slate-200 font-medium">{loadBalancer.flexible_lb_count || 0} / 1</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">{loadBalancer.flexible_lb_count || 0} / 1</span>
               </div>
               <div className="flex justify-between">
                 <span>Network LB (NLB):</span>
-                <span className="text-slate-200 font-medium">{loadBalancer.nlb_count || 0} / 1</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">{loadBalancer.nlb_count || 0} / 1</span>
               </div>
             </MetricCard>
 
@@ -478,69 +537,59 @@ function Dashboard() {
             >
               <div className="flex justify-between">
                 <span>Permitido:</span>
-                <span className="text-slate-200 font-medium">Até 2 Bastions gratuitos</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">Até 2 Bastions gratuitos</span>
               </div>
               <div className="flex justify-between">
                 <span>Sessões SSH Port-Forward:</span>
-                <span className="text-slate-200 font-medium">Inclusas</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">Inclusas</span>
               </div>
             </MetricCard>
           </div>
         </div>
 
-        {/* 3. SEÇÃO: Bancos de Dados & Projeção Mensal */}
+        {/* 4. SEÇÃO: Bancos de Dados Always Free */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-            <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-              Bancos de Dados Always Free & Queima Mensal
+              Bancos de Dados Always Free
             </h2>
-            <span className="text-xs text-slate-500">Autonomous Database (ATP/ADW) • Burn-Rate</span>
+            <span className="text-xs text-slate-500">Autonomous Database (ATP/ADW) • APEX • 2 DBs / 40 GB</span>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {/* Autonomous Database */}
-            <div className="lg:col-span-1">
-              <MetricCard
-                title="Autonomous Database"
-                subtitle="ATP, ADW, JSON ou APEX"
-                icon={Database}
-                used={`${database.active_count || 0} DB`}
-                limit={`${database.limit_count || 2} Bancos`}
-                unit=""
-                percentage={database.percentage || 0}
-                status={database.status}
-              >
-                <div className="flex justify-between">
-                  <span>Armazenamento Alocado:</span>
-                  <span className="text-slate-200 font-medium">
-                    {database.allocated_storage_gb || 0} / {database.limit_storage_gb || 40} GB
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>OCPUs por Banco:</span>
-                  <span className="text-slate-200 font-medium">1 OCPU (Automático)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Recursos:</span>
-                  <span className="text-slate-200 font-medium">APEX + Machine Learning</span>
-                </div>
-              </MetricCard>
-            </div>
-
-            {/* Burn-Rate and Monthly Projection */}
-            <div className="lg:col-span-2">
-              <BurnRateCard
-                burnRate={burnRate}
-                computeAmpere={computeAmpere}
-                network={network}
-              />
-            </div>
+            <MetricCard
+              title="Autonomous Database"
+              subtitle="ATP, ADW, JSON ou APEX"
+              icon={Database}
+              used={`${database.active_count || 0} DB`}
+              limit={`${database.limit_count || 2} Bancos`}
+              unit=""
+              percentage={database.percentage || 0}
+              status={database.status}
+            >
+              <div className="flex justify-between">
+                <span>Armazenamento Alocado:</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">
+                  {database.allocated_storage_gb || 0} / {database.limit_storage_gb || 40} GB
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span>OCPUs por Banco:</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">1 OCPU (Automático)</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Recursos:</span>
+                <span className="text-slate-800 dark:text-slate-200 font-medium">APEX + Machine Learning</span>
+              </div>
+            </MetricCard>
           </div>
         </div>
 
-        {/* 4. SEÇÃO: Inventário Detalhado em Abas */}
+        {/* 5. SEÇÃO: Inventário Detalhado em Abas */}
         <ResourceInventory
+          instances={instances}
           volumes={volumes}
           vcns={networkInv.vcns || []}
           publicIps={networkInv.public_ips || []}
@@ -559,7 +608,7 @@ function Dashboard() {
       />
 
       {/* Footer */}
-      <footer className="border-t border-[#22272E] py-6 text-center text-xs text-slate-500">
+      <footer className="border-t border-slate-200 dark:border-[#22272E] py-6 text-center text-xs text-slate-500 transition-colors">
         OCI Always Free Monitor • Visibilidade completa de Compute, Armazenamento, Rede e Bancos de Dados.
       </footer>
     </div>

@@ -115,6 +115,50 @@ def test_compute_instances_aggregation(sample_compute_instances):
     assert micro["status"] == "safe"
 
 
+def test_compute_instances_inventory_details(sample_compute_instances):
+    """
+    Test that process_compute_inventory extracts the detailed instance inventory
+    with columns in order: nome, arquitetura, cpu, memoria, compartment.
+    Terminated instances must be excluded.
+    """
+    from app.services.oci_collector import process_compute_inventory
+
+    comp_map = {
+        "ocid1.tenancy.oc1..root": "root",
+        "ocid1.compartment.oc1..dev": "dev-team"
+    }
+
+    result = process_compute_inventory(sample_compute_instances, compartment_map=comp_map)
+    assert "instances_detail" in result
+    details = result["instances_detail"]
+
+    # 3 running instances (2 Ampere, 1 Micro), 1 terminated instance ignored
+    assert len(details) == 3
+
+    # Check Ampere instance 1
+    arm1 = next(i for i in details if i["display_name"] == "arm-app-server")
+    assert arm1["architecture"] == "ARM (Ampere A1 Flex)"
+    assert arm1["ocpus"] == 2.0
+    assert arm1["memory_gb"] == 12.0
+    assert arm1["compartment_name"] == "root"
+    assert arm1["lifecycle_state"] == "RUNNING"
+
+    # Check Ampere instance 2 in dev compartment
+    arm2 = next(i for i in details if i["display_name"] == "arm-db-server")
+    assert arm2["architecture"] == "ARM (Ampere A1 Flex)"
+    assert arm2["ocpus"] == 2.0
+    assert arm2["memory_gb"] == 12.0
+    assert arm2["compartment_name"] == "dev-team"
+
+    # Check Micro instance
+    micro = next(i for i in details if i["display_name"] == "micro-vpn")
+    assert micro["architecture"] == "AMD (Micro)"
+    assert micro["ocpus"] == 1.0
+    assert micro["memory_gb"] == 1.0
+    assert micro["compartment_name"] == "root"
+
+
+
 def test_object_storage_aggregation(sample_object_storage):
     """Test object storage bytes to GB conversion and tier aggregation."""
     from app.services.oci_collector import process_object_storage_inventory

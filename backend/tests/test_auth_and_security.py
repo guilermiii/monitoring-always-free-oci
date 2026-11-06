@@ -178,3 +178,41 @@ async def test_aggressive_masking_logic():
     assert "portfolio-***" in masked_summary["tenancy"]["name"]
     assert "guilherme" not in masked_summary["tenancy"]["name"]
     assert masked_summary["portfolio_mode"] is True
+
+
+@pytest.mark.asyncio
+async def test_mask_compute_instances():
+    """Verify that compute instances inventory masks sensitive OCIDs and display names but preserves specs."""
+    from app.services.security import mask_instances_data
+
+    instances = [
+        {
+            "id": "ocid1.instance.oc1..abcdef1234567890",
+            "display_name": "prod-k8s-master-node",
+            "architecture": "ARM (Ampere A1 Flex)",
+            "shape": "VM.Standard.A1.Flex",
+            "ocpus": 4.0,
+            "memory_gb": 24.0,
+            "compartment_id": "ocid1.compartment.oc1..comp999",
+            "compartment_name": "pipeline-terraform",
+            "lifecycle_state": "RUNNING",
+            "time_created": "2026-01-01T00:00:00Z"
+        }
+    ]
+
+    masked = mask_instances_data(instances)
+    assert len(masked) == 1
+    item = masked[0]
+
+    # Sensitive fields masked
+    assert item["id"].startswith("ocid1.instance...")
+    assert "abcdef" not in item["id"]
+    assert "prod-k8s" not in item["display_name"]
+    assert item["display_name"].startswith("vm-***")
+
+    # Hardware specs preserved for portfolio viewers
+    assert item["architecture"] == "ARM (Ampere A1 Flex)"
+    assert item["ocpus"] == 4.0
+    assert item["memory_gb"] == 24.0
+    assert item["lifecycle_state"] == "RUNNING"
+

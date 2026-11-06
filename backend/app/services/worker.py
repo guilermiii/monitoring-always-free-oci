@@ -8,6 +8,7 @@ from app.services.cache import (
     set_cached_volumes,
     set_cached_network,
     set_cached_database,
+    set_cached_instances,
     record_api_calls,
 )
 
@@ -28,7 +29,7 @@ async def collect_and_cache() -> Dict[str, Any]:
 
         # Run synchronous OCI SDK calls in asyncio thread pool
         loop = asyncio.get_running_loop()
-        summary, volumes, network, databases = await loop.run_in_executor(None, collector.collect)
+        summary, volumes, network, databases, instances = await loop.run_in_executor(None, collector.collect)
 
         # Record API calls in Redis and attach api_usage to summary
         api_usage = await record_api_calls(collector.api_calls_count)
@@ -38,6 +39,7 @@ async def collect_and_cache() -> Dict[str, Any]:
         await set_cached_volumes(volumes)
         await set_cached_network(network)
         await set_cached_database(databases)
+        await set_cached_instances(instances)
         logger.info(f"Successfully updated OCI metrics in Redis (API calls this run: {collector.api_calls_count}).")
         return summary
     except Exception as e:

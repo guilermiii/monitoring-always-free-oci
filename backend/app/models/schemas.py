@@ -211,6 +211,19 @@ class SummaryResponse(BaseModel):
     portfolio_mode: Optional[bool] = Field(default=False, description="True if data is sanitized for public portfolio mode")
 
 
+class InstanceDetail(BaseModel):
+    id: str
+    display_name: str
+    architecture: str
+    shape: str
+    ocpus: float
+    memory_gb: float
+    compartment_id: Optional[str] = None
+    compartment_name: Optional[str] = None
+    lifecycle_state: str = "RUNNING"
+    time_created: Optional[str] = None
+
+
 class VolumeDetail(BaseModel):
     id: str
     display_name: str

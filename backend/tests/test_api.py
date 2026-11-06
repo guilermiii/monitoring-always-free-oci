@@ -309,3 +309,36 @@ async def test_summary_includes_networking_with_both_ip_types(mock_redis, mock_s
             assert pip["status"] == "warning"
 
 
+@pytest.mark.asyncio
+async def test_get_compute_instances_endpoint(mock_redis):
+    """Test GET /api/v1/compute/instances returns cached compute instances."""
+    from app.main import app
+
+    instances = [
+        {
+            "id": "ocid1.instance.oc1..inst1",
+            "display_name": "arm-worker-node",
+            "architecture": "ARM (Ampere A1 Flex)",
+            "shape": "VM.Standard.A1.Flex",
+            "ocpus": 4.0,
+            "memory_gb": 24.0,
+            "compartment_id": "ocid1.compartment.oc1..c1",
+            "compartment_name": "production",
+            "lifecycle_state": "RUNNING",
+            "time_created": "2026-02-01T12:00:00Z"
+        }
+    ]
+    await mock_redis.set("oci:free_tier:instances", json.dumps(instances))
+
+    with patch("app.services.cache.get_redis_client", return_value=mock_redis):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            response = await ac.get("/api/v1/compute/instances")
+            assert response.status_code == 200
+            data = response.json()
+            assert len(data) == 1
+            assert data[0]["architecture"] == "ARM (Ampere A1 Flex)"
+            assert data[0]["ocpus"] == 4.0
+            assert data[0]["memory_gb"] == 24.0
+
+
+

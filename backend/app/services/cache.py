@@ -20,6 +20,7 @@ KEY_SUMMARY = "oci:free_tier:summary"
 KEY_VOLUMES = "oci:free_tier:volumes"
 KEY_NETWORK = "oci:free_tier:network"
 KEY_DATABASE = "oci:free_tier:database"
+KEY_INSTANCES = "oci:free_tier:instances"
 KEY_STALE_BACKUP = "oci:free_tier:summary:backup"
 KEY_API_CALLS_PREFIX = "oci:api_calls"
 KEY_API_CALLS_LAST_RUN = "oci:api_calls:last_run"
@@ -138,6 +139,28 @@ async def set_cached_database(data: List[Dict[str, Any]], ttl: int = CACHE_TTL_S
         return True
     except Exception as e:
         logger.error(f"Error saving database inventory to Redis: {e}")
+        return False
+
+
+async def get_cached_instances() -> Optional[List[Dict[str, Any]]]:
+    try:
+        client = get_redis_client()
+        raw = await client.get(KEY_INSTANCES)
+        if raw:
+            return json.loads(raw)
+    except Exception as e:
+        logger.error(f"Error reading compute instances from Redis: {e}")
+    return None
+
+
+async def set_cached_instances(data: List[Dict[str, Any]], ttl: int = CACHE_TTL_SECONDS) -> bool:
+    try:
+        client = get_redis_client()
+        raw = json.dumps(data)
+        await client.set(KEY_INSTANCES, raw, ex=ttl)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving compute instances to Redis: {e}")
         return False
 
 

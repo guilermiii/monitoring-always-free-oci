@@ -7,6 +7,7 @@ from app.models.schemas import (
     VolumeDetail,
     NetworkInventoryResponse,
     DatabaseDetail,
+    InstanceDetail,
 )
 from app.services import cache
 from app.services import worker
@@ -18,6 +19,7 @@ from app.services.security import (
     mask_volumes_data,
     mask_network_inventory,
     mask_database_inventory,
+    mask_instances_data,
 )
 
 logger = logging.getLogger(__name__)
@@ -157,4 +159,29 @@ async def get_database_inventory(admin=Depends(get_optional_admin)):
     if admin is None and PORTFOLIO_MODE:
         return mask_database_inventory(data)
     return data
+
+
+@router.get("/compute/instances", response_model=List[InstanceDetail])
+async def get_compute_instances(admin=Depends(get_optional_admin)):
+    """
+    Returns detailed inventory of compute instances (Ampere A1 & AMD Micro).
+    Masks OCIDs and private display names for portfolio visitors while preserving CPU/RAM specs.
+    """
+    cached = await cache.get_cached_instances()
+    if cached is None:
+        try:
+            await worker.collect_and_cache()
+            cached = await cache.get_cached_instances()
+        except Exception as e:
+            logger.error(f"Failed to fetch compute instances: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Unable to retrieve compute instances: {str(e)}"
+            )
+
+    data = cached or []
+    if admin is None and PORTFOLIO_MODE:
+        return mask_instances_data(data)
+    return data
+
 
