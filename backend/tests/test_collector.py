@@ -203,6 +203,69 @@ def test_public_ip_aggregation_and_unassigned_detection(sample_public_ips):
     assert result["unassigned_ips"][0]["ip_address"] == "129.148.1.20"
 
 
+def test_public_ip_with_assigned_state_and_private_ip():
+    """
+    Verify that public IPs with lifecycle_state='ASSIGNED' (e.g., attached to a PRIVATE_IP or NAT_GATEWAY)
+    are correctly counted and not discarded by the collector.
+    """
+    from app.services.oci_collector import process_public_ip_inventory
+    from unittest.mock import MagicMock
+
+    # 1. Reserved IP attached to a Private IP (ASSIGNED lifecycle state)
+    ip_reserved_assigned = MagicMock()
+    ip_reserved_assigned.id = "ocid1.publicip.oc1..pip_fixed"
+    ip_reserved_assigned.ip_address = "137.131.207.152"
+    ip_reserved_assigned.display_name = "pip-blog-do-zeca-fixed"
+    ip_reserved_assigned.lifetime = "RESERVED"
+    ip_reserved_assigned.lifecycle_state = "ASSIGNED"
+    ip_reserved_assigned.assigned_entity_id = "ocid1.privateip.oc1..priv1"
+    ip_reserved_assigned.assigned_entity_type = "PRIVATE_IP"
+    ip_reserved_assigned.compartment_id = "ocid1.compartment.oc1..c1"
+
+    # 2. Ephemeral IP assigned to a NAT Gateway (ASSIGNED lifecycle state)
+    ip_eph_assigned = MagicMock()
+    ip_eph_assigned.id = "ocid1.publicip.oc1..pip_nat"
+    ip_eph_assigned.ip_address = "163.176.85.210"
+    ip_eph_assigned.display_name = "IP for NAT gateway"
+    ip_eph_assigned.lifetime = "EPHEMERAL"
+    ip_eph_assigned.lifecycle_state = "ASSIGNED"
+    ip_eph_assigned.assigned_entity_id = "ocid1.natgateway.oc1..nat1"
+    ip_eph_assigned.assigned_entity_type = "NAT_GATEWAY"
+    ip_eph_assigned.compartment_id = "ocid1.compartment.oc1..c1"
+
+    # 3. Terminated IP (should be ignored)
+    ip_terminated = MagicMock()
+    ip_terminated.id = "ocid1.publicip.oc1..pip_dead"
+    ip_terminated.ip_address = "137.131.207.99"
+    ip_terminated.display_name = "terminated"
+    ip_terminated.lifetime = "RESERVED"
+    ip_terminated.lifecycle_state = "TERMINATED"
+    ip_terminated.assigned_entity_id = None
+
+    raw_ips = [ip_reserved_assigned, ip_eph_assigned, ip_terminated]
+    comp_map = {"ocid1.compartment.oc1..c1": "pipeline-terraform"}
+
+    result = process_public_ip_inventory(raw_ips, comp_map)
+
+    assert result["reserved_count"] == 1
+    assert result["reserved_limit"] == 1
+    assert result["unassigned_reserved_count"] == 0
+    assert result["ephemeral_count"] == 1
+    assert result["total_active_ips"] == 2
+    assert result["percentage"] == 100.0
+    assert result["status"] == "danger"
+    assert len(result["unassigned_ips"]) == 0
+    assert len(result["all_ips"]) == 2
+
+    # Check details of reserved IP
+    res_ip = next(ip for ip in result["all_ips"] if ip["lifetime"] == "RESERVED")
+    assert res_ip["ip_address"] == "137.131.207.152"
+    assert res_ip["is_unassigned"] is False
+    assert res_ip["assigned_entity_type"] == "PRIVATE_IP"
+    assert res_ip["compartment_name"] == "pipeline-terraform"
+
+
+
 def test_load_balancer_aggregation(sample_load_balancers):
     """Test counting active flexible load balancers and NLBs."""
     from app.services.oci_collector import process_load_balancer_inventory

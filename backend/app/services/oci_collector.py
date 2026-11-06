@@ -9,6 +9,14 @@ logger = logging.getLogger(__name__)
 
 ACTIVE_VOLUME_STATES = {"AVAILABLE", "PROVISIONING", "RESTORING"}
 ACTIVE_NETWORK_STATES = {"AVAILABLE", "PROVISIONING"}
+ACTIVE_PUBLIC_IP_STATES = {
+    "AVAILABLE",
+    "ASSIGNED",
+    "ASSIGNING",
+    "UNASSIGNED",
+    "UNASSIGNING",
+    "PROVISIONING",
+}
 ACTIVE_LB_STATES = {"ACTIVE", "PROVISIONING", "CREATING"}
 ACTIVE_DB_STATES = {"AVAILABLE", "PROVISIONING", "UPDATING", "STOPPED"}
 ACTIVE_BASTION_STATES = {"ACTIVE", "CREATING", "UPDATING"}
@@ -281,7 +289,7 @@ def process_public_ip_inventory(
     """
     active_ips = [
         ip for ip in public_ips
-        if getattr(ip, "lifecycle_state", "AVAILABLE") in ACTIVE_NETWORK_STATES
+        if getattr(ip, "lifecycle_state", "AVAILABLE") in ACTIVE_PUBLIC_IP_STATES
     ]
     reserved_ips = [ip for ip in active_ips if getattr(ip, "lifetime", "RESERVED") == "RESERVED"]
     ephemeral_ips = [ip for ip in active_ips if getattr(ip, "lifetime", "") == "EPHEMERAL"]
