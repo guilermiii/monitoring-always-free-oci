@@ -154,7 +154,7 @@ jobs:
 
       # --- Scan Backend ---
       - name: Run Trivy on Backend Image (Table Report)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@v0.29.0
         with:
           image-ref: ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
           format: 'table'
@@ -166,7 +166,7 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Run Trivy on Backend Image (SARIF Report)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@v0.29.0
         with:
           image-ref: ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
           format: 'sarif'
@@ -179,7 +179,7 @@ jobs:
 
       # --- Scan Frontend ---
       - name: Run Trivy on Frontend Image (Table Report)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@v0.29.0
         with:
           image-ref: ${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}
           format: 'table'
@@ -191,7 +191,7 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Run Trivy on Frontend Image (SARIF Report)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@v0.29.0
         with:
           image-ref: ${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}
           format: 'sarif'
