@@ -1,0 +1,257 @@
+name: CI - GitHub Flow, ARM64 Multi-Arch Build & Trivy Security
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'fix/**'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  BACKEND_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.BACKEND_IMAGE_NAME || 'always-free-backend' }}
+  FRONTEND_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.FRONTEND_IMAGE_NAME || 'always-free-frontend' }}
+
+jobs:
+  # -------------------------------------------------------------
+  # Job 1: Backend Automated Tests (FastAPI + Pytest)
+  # -------------------------------------------------------------
+  test-backend:
+    name: Run Backend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements-test.txt'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-test.txt
+
+      - name: Execute Backend Tests (Pytest)
+        run: |
+          pytest backend/tests/ -v
+
+  # -------------------------------------------------------------
+  # Job 2: Frontend Lint & Build Check (React + Vite)
+  # -------------------------------------------------------------
+  test-frontend:
+    name: Run Frontend Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install Dependencies and Build
+        working-directory: ./frontend
+        run: |
+          npm install
+          npm run build
+
+  # -------------------------------------------------------------
+  # Job 3: Multi-Arch Container Build & Push (Target: ARM64 K8s)
+  # -------------------------------------------------------------
+  build-and-push:
+    name: Build & Push Multi-Arch Containers (ARM64/AMD64)
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (ARM64 Support)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64,amd64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract Metadata for Backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=sha-${{ github.sha }}
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+
+      - name: Build and Push Backend Image (ARM64 & AMD64)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          platforms: linux/arm64,linux/amd64
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract Metadata for Frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.FRONTEND_IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=sha-${{ github.sha }}
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+
+      - name: Build and Push Frontend Image (ARM64 & AMD64)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          platforms: linux/arm64,linux/amd64
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # -------------------------------------------------------------
+  # Job 4: Trivy Container Vulnerability Scan & Artifact Archiving
+  # -------------------------------------------------------------
+  security-scan:
+    name: Trivy Security Scan & Result Archiving
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # --- Scan Backend ---
+      - name: Run Trivy on Backend Image (Table Report)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
+          format: 'table'
+          output: 'trivy-backend-report.txt'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+        env:
+          TRIVY_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Run Trivy on Backend Image (SARIF Report)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-backend.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+        env:
+          TRIVY_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # --- Scan Frontend ---
+      - name: Run Trivy on Frontend Image (Table Report)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}
+          format: 'table'
+          output: 'trivy-frontend-report.txt'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+        env:
+          TRIVY_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Run Trivy on Frontend Image (SARIF Report)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-frontend.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+        env:
+          TRIVY_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # --- Archive Reports as Pipeline Artifacts ---
+      - name: Archive Trivy Reports as Workflow Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-security-reports
+          path: |
+            trivy-backend-report.txt
+            trivy-backend.sarif
+            trivy-frontend-report.txt
+            trivy-frontend.sarif
+          retention-days: 30
+
+      # --- Upload SARIF to GitHub Security Tab ---
+      - name: Upload Backend SARIF to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: 'trivy-backend.sarif'
+          category: 'trivy-backend'
+
+      - name: Upload Frontend SARIF to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: 'trivy-frontend.sarif'
+          category: 'trivy-frontend'
+
+      # --- Publish Step Summary in GitHub Actions UI ---
+      - name: Publish Trivy Summary to GitHub Actions UI
+        if: always()
+        run: |
+          echo "## 🛡️ Trivy Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Backend Image: \`${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ -s trivy-backend-report.txt ]; then
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            head -n 50 trivy-backend-report.txt >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Nenhuma vulnerabilidade CRITICAL ou HIGH encontrada." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Frontend Image: \`${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ -s trivy-frontend-report.txt ]; then
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            head -n 50 trivy-frontend-report.txt >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Nenhuma vulnerabilidade CRITICAL ou HIGH encontrada." >> $GITHUB_STEP_SUMMARY
+          fi
