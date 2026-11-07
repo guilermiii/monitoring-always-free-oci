@@ -152,55 +152,54 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # --- Scan Backend ---
-      - name: Run Trivy on Backend Image (Table Report)
-        uses: aquasecurity/trivy-action@v0.29.0
+      - name: Set up Trivy CLI
+        uses: aquasecurity/setup-trivy@v0.3.1
         with:
-          image-ref: ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
-          format: 'table'
-          output: 'trivy-backend-report.txt'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-        env:
-          TRIVY_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
-          TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+          cache: true
 
-      - name: Run Trivy on Backend Image (SARIF Report)
-        uses: aquasecurity/trivy-action@v0.29.0
+      - name: Log in to Docker Hub for Trivy Scan
+        uses: docker/login-action@v3
         with:
-          image-ref: ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-backend.sarif'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-        env:
-          TRIVY_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
-          TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # --- Scan Frontend ---
-      - name: Run Trivy on Frontend Image (Table Report)
-        uses: aquasecurity/trivy-action@v0.29.0
-        with:
-          image-ref: ${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}
-          format: 'table'
-          output: 'trivy-frontend-report.txt'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+      - name: Scan Backend Image with Trivy
         env:
           TRIVY_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
           TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          trivy image \
+            --severity CRITICAL,HIGH \
+            --format table \
+            --output trivy-backend-report.txt \
+            --exit-code 0 \
+            ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
 
-      - name: Run Trivy on Frontend Image (SARIF Report)
-        uses: aquasecurity/trivy-action@v0.29.0
-        with:
-          image-ref: ${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-frontend.sarif'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+          trivy image \
+            --severity CRITICAL,HIGH \
+            --format sarif \
+            --output trivy-backend.sarif \
+            --exit-code 0 \
+            ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
+
+      - name: Scan Frontend Image with Trivy
         env:
           TRIVY_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
           TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          trivy image \
+            --severity CRITICAL,HIGH \
+            --format table \
+            --output trivy-frontend-report.txt \
+            --exit-code 0 \
+            ${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}
+
+          trivy image \
+            --severity CRITICAL,HIGH \
+            --format sarif \
+            --output trivy-frontend.sarif \
+            --exit-code 0 \
+            ${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}
 
       # --- Archive Reports as Pipeline Artifacts ---
       - name: Archive Trivy Reports as Workflow Artifacts
