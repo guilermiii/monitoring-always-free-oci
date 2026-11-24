@@ -141,7 +141,37 @@ jobs:
           cache-to: type=gha,mode=max
 
   # -------------------------------------------------------------
-  # Job 4: Trivy Container Vulnerability Scan & Artifact Archiving
+  # Job 4: Update Docker Hub Overview Descriptions via API
+  # -------------------------------------------------------------
+  update-dockerhub-descriptions:
+    name: Push Repository Overview to Docker Hub
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Update Backend Docker Hub Description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.BACKEND_IMAGE }}
+          readme-filepath: ./backend/README.md
+          short-description: "OCI Always Free Monitor - Backend API, Prometheus metrics exporter & async collector"
+
+      - name: Update Frontend Docker Hub Description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.FRONTEND_IMAGE }}
+          readme-filepath: ./frontend/README.md
+          short-description: "OCI Always Free Monitor - Modern React SPA dashboard & cloud resource inventory UI"
+
+  # -------------------------------------------------------------
+  # Job 5: Trivy Container Vulnerability Scan & Artifact Archiving
   # -------------------------------------------------------------
   security-scan:
     name: Trivy Security Scan & Result Archiving
