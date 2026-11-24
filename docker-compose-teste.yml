@@ -1,0 +1,80 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: oci-redis
+    command: redis-server --appendonly yes --dir /data
+    restart: unless-stopped
+    volumes:
+      - oci-redis-data:/data
+    networks:
+      - oci-net
+
+  prometheus:
+    image: prom/prometheus:v3.16.0-rc.4
+    volumes:
+      - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yml
+    container_name: oci-prometheus
+    restart: unless-stopped 
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+      - frontend
+      - redis
+    networks:
+      - oci-net
+  exporter:
+    image: oliver006/redis_exporter:v1.97.0-alpine
+    container_name: oci-redis-exporter
+    restart: unless-stopped
+    networks:
+    - oci-net
+    environment:
+      REDIS_ADDR: redis
+      REDIS_USER: default
+
+  backend:
+    image: devguina/oci-always-free-monitoring-backend:latest
+    container_name: oci-backend
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - REFRESH_INTERVAL_SECONDS=600
+      - CACHE_TTL_SECONDS=900
+      - OCI_CONFIG_FILE=/home/appuser/.oci/config
+      - OCI_CONFIG_PROFILE=DEFAULT
+      - PORTFOLIO_MODE=true
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin
+      - PERSISTENT_DATA_DIR=/app/data
+    volumes:
+      - ${HOME}/.oci:/home/appuser/.oci:ro
+      - ${HOME}/.ssh:/home/appuser/.ssh:ro
+      - ${HOME}/.oci:/etc/oci:ro
+      - oci-backend-data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    networks:
+      - oci-net
+
+  frontend:
+    image: devguina/oci-always-free-monitoring-frontend:latest
+    container_name: oci-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - oci-net
+  
+networks:
+  oci-net:
+    driver: bridge
+
+volumes:
+  oci-redis-data:
+  oci-backend-data:
+

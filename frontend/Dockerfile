@@ -1,5 +1,5 @@
 # Stage 1: Build the React Application
-FROM node:20-alpine AS build
+FROM --platform=$BUILDPLATFORM node:20-alpine AS build
 
 WORKDIR /app
 
@@ -12,8 +12,16 @@ RUN npm run build
 # Stage 2: Serve with Nginx
 FROM nginx:alpine
 
+ENV BACKEND_HOST=backend \
+    BACKEND_PORT=8000 \
+    NGINX_ENVSUBST_FILTER="BACKEND_HOST BACKEND_PORT NAMESERVER"
+
+# Detect DNS nameserver from /etc/resolv.conf before envsubst runs
+RUN printf '#!/bin/sh\nexport NAMESERVER=$(awk '"'"'/nameserver/ {print $2; exit}'"'"' /etc/resolv.conf 2>/dev/null || echo "127.0.0.11")\n[ -z "$NAMESERVER" ] && export NAMESERVER="127.0.0.11"\n' > /docker-entrypoint.d/15-set-resolver.sh && \
+    chmod +x /docker-entrypoint.d/15-set-resolver.sh
+
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 EXPOSE 80
 
