@@ -7,9 +7,9 @@
 [![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-E6522C.svg?logo=prometheus&logoColor=white)](https://prometheus.io)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-Ready-326CE5.svg?logo=kubernetes&logoColor=white)](https://kubernetes.io)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com)
-[![Tests](https://img.shields.io/badge/Tests-41%20Passed-success.svg?logo=pytest&logoColor=white)](backend/tests/)
+[![Tests](https://img.shields.io/badge/Tests-53%20Passed-success.svg?logo=pytest&logoColor=white)](backend/tests/)
 
-Dashboard moderno, responsivo e conteinerizado para monitoramento em tempo real e projetado dos recursos do plano **Always Free** da **Oracle Cloud Infrastructure (OCI)**. Previne cobranças acidentais, calcula a taxa de queima mensal (*burn-rate*), audita chamadas de API contra limites de cota, identifica **recursos órfãos** (discos desvinculados e IPs fixos desalocados) e oferece **observabilidade nativa para Prometheus e Kubernetes** (Liveness, Readiness, Startup Probes e Swagger/OpenAPI 100% tipado).
+Dashboard moderno, responsivo e conteinerizado para monitoramento em tempo real e projetado dos recursos do plano **Always Free** da **Oracle Cloud Infrastructure (OCI)**. Previne cobranças acidentais, calcula a taxa de queima mensal (*burn-rate*), audita chamadas de API contra limites de cota, identifica **recursos órfãos** (discos desvinculados e IPs fixos desalocados), possui **Modo Portfólio (Privacy Mode) com anonimização ativa**, **Autenticação Administrativa Única** e oferece **observabilidade nativa para Prometheus e Kubernetes** (Liveness, Readiness, Startup Probes e Swagger/OpenAPI 100% tipado).
 
 ---
 
@@ -65,6 +65,11 @@ Dashboard moderno, responsivo e conteinerizado para monitoramento em tempo real 
 * **Kubernetes Lifecycle Probes:** Endpoints dedicados `/livez`, `/readyz` e `/startupz` com status codes semânticos (200 / 503).
 * **Swagger/OpenAPI 100% Tipado:** Todos os endpoints com esquemas Pydantic v2 documentados em `/docs` e `/redoc`.
 
+### 11. Modo Portfólio (Privacy Mode) & Autenticação Administrativa 🛡️
+* **Mascaramento Agressivo de Dados Sensíveis:** Em acessos públicos não autenticados, OCIDs, identificadores de instâncias, volumes, VCNs e IPs públicos são automaticamente anonimizados.
+* **Autenticação Administrativa Única:** Login seguro via JWT (`/api/v1/auth/login`) com cookies HttpOnly (`SameSite=Lax`, `Secure`), proteção contra força bruta com bloqueio temporário e rate limiting adaptativo por IP via Redis.
+* **Sincronização Sob Demanda Restrita:** Apenas o administrador autenticado pode disparar coletas manuais imediatas na nuvem, preservando as cotas da OCI.
+
 ---
 
 ## 🏛️ Arquitetura do Sistema
@@ -118,7 +123,7 @@ flowchart TD
 |---|---|---|
 | **Frontend** | React 18, Vite, Tailwind CSS, Lucide React | SPA moderna com dashboard, alertas de órfãos e abas de inventário |
 | **Web Server** | Nginx Alpine | Servidor web estático e proxy reverso para a API, métricas e probes |
-| **Backend** | Python 3.11+, FastAPI, Uvicorn, OCI SDK | API REST assíncrona, agregador e validador Pydantic v2 |
+| **Backend** | Python 3.11+ (Alpine Linux, usuário não-privilegiado 1000:1000, Pod Security Restricted), FastAPI, Uvicorn, OCI SDK | API REST assíncrona, agregador e validador Pydantic v2 |
 | **Observabilidade** | Prometheus Client Python | Exposição de métricas de processo, tráfego HTTP e gauges OCI em `/metrics` |
 | **Orquestração K8s** | Probes Liveness, Readiness, Startup | Resiliência e integração nativa com Kubernetes e contêineres |
 | **Cache** | Redis 7 Alpine (`--save ""`) | Cache volátil de altíssima velocidade e contador de chamadas de API |
@@ -184,60 +189,64 @@ Projetado para rodar como Pod em clusters Kubernetes com resiliência de produç
 | **Startup Probe** | `GET /startupz` | `200 OK` | `503 Unavailable` | Retorna 200 apenas após o término do `lifespan` do FastAPI. Protege inicializações lentas em pods com recursos restritos. |
 | **General Health** | `GET /healthz` | `200 OK` | `503 Unavailable` | Checagem consolidada geral da saúde da aplicação. |
 
-### Exemplo de Manifesto Kubernetes (`Deployment.yaml`)
+### Exemplo de Manifestos Kubernetes (`Deployment.yaml` e `Ingress.yaml`)
 
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: oci-always-free-monitor
+  name: oci-always-free-backend
   labels:
-    app: oci-monitor
+    app: oci-backend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: oci-monitor
+      app: oci-backend
   template:
     metadata:
       labels:
-        app: oci-monitor
+        app: oci-backend
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: backend
-          image: oci-always-free-backend:latest
+          image: devguina/oci-always-free-monitoring-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
               name: http
-          env:
-            - name: REDIS_URL
-              value: "redis://redis-service:6379/0"
-            - name: OCI_CONFIG_FILE
-              value: "/root/.oci/config"
+          envFrom:
+            - secretRef:
+                name: backend-secrets
+            - configMapRef:
+                name: backend-config
           volumeMounts:
             - name: oci-credentials
-              mountPath: /root/.oci
+              mountPath: /secrets/oci
               readOnly: true
-          # Startup Probe: aguarda inicialização da aplicação
+            - name: backend-data
+              mountPath: /app/data
           startupProbe:
             httpGet:
               path: /startupz
               port: 8000
             failureThreshold: 30
             periodSeconds: 5
-          # Liveness Probe: verifica se a aplicação não travou
           livenessProbe:
             httpGet:
               path: /livez
               port: 8000
             periodSeconds: 10
             timeoutSeconds: 3
-          # Readiness Probe: verifica conectividade com Redis e OCI
           readinessProbe:
             httpGet:
               path: /readyz
@@ -247,7 +256,42 @@ spec:
       volumes:
         - name: oci-credentials
           secret:
-            secretName: oci-config-secret
+            secretName: oci-credentials
+        - name: backend-data
+          persistentVolumeClaim:
+            claimName: oci-backend-pvc
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oci-monitor-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - monitor.seudominio.com
+      secretName: oci-monitor-tls
+  rules:
+    - host: monitor.seudominio.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: oci-backend
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: oci-frontend
+                port:
+                  number: 80
 ```
 
 ---
@@ -278,19 +322,27 @@ A API conta com documentação interativa gerada automaticamente e tipada via Py
 
 ---
 
-## ⚙️ Variáveis de Ambiente
+## ⚙️ Variáveis de Ambiente e Configurações
 
-As seguintes variáveis podem ser configuradas no arquivo `docker-compose.yml` ou em um arquivo `.env`:
+A aplicação foi projetada para que **todos os parâmetros operacionais seguros venham embutidos na imagem por padrão** (`SESSION_COOKIE_SECURE=true`, `OCI_CONFIG_FILE=/secrets/oci/config`, `PORTFOLIO_MODE=true`, `REFRESH_INTERVAL_SECONDS=600`, etc.).
+
+Para personalizações locais e no cluster, consulte:
+* **Modelo completo e documentado:** [.env.example](.env.example)
+* **Guia minimalista para Kubernetes (Secrets e ConfigMap):** [.env.k8s](.env.k8s)
 
 | Variável | Padrão | Descrição |
 |---|---|---|
-| `REFRESH_INTERVAL_SECONDS` | `600` (10 min) | Intervalo entre varreduras automáticas em background |
+| `SESSION_COOKIE_SECURE` | `true` (prod) / `false` (local) | Ativa flag Secure em cookies de sessão (obrigatório com HTTPS / Let's Encrypt) |
+| `PORTFOLIO_MODE` | `true` | Anonimiza OCIDs, IPs públicos e nomes reais para acessos públicos não autenticados |
+| `ADMIN_USERNAME` | `admin` | Nome de usuário para login administrativo no dashboard |
+| `ADMIN_PASSWORD_HASH` | (vazio) | Hash Bcrypt da senha de administrador (gerado com bcrypt) |
+| `JWT_SECRET_KEY` | (chave padrão) | Segredo para assinatura de tokens JWT de sessão (mínimo 64 hexadecimais) |
+| `REFRESH_INTERVAL_SECONDS` | `600` (10 min) | Intervalo entre varreduras automáticas da OCI em background |
 | `CACHE_TTL_SECONDS` | `900` (15 min) | Tempo de expiração (TTL) das chaves de métricas no Redis |
-| `REDIS_URL` | `redis://redis:6379/0` | String de conexão para o Redis |
-| `OCI_API_DAILY_LIMIT` | `10000` | Limite de segurança diário para chamadas de API OCI |
-| `OCI_API_RATE_LIMIT_PER_MIN`| `3000` | Taxa máxima de referência por minuto da OCI |
-| `OCI_CONFIG_FILE` | `~/.oci/config` | Caminho do arquivo de configuração do OCI SDK |
+| `REDIS_URL` | `redis://redis:6379/0` | String de conexão para o Redis interno |
+| `OCI_CONFIG_FILE` | `/secrets/oci/config` | Caminho do arquivo de configuração do OCI SDK |
 | `OCI_CONFIG_PROFILE` | `DEFAULT` | Perfil do OCI config a ser utilizado |
+| `ALLOWED_ORIGINS` | `*` | Origens permitidas para requisições CORS |
 | `DISABLE_BACKGROUND_WORKER` | `false` | Permite desabilitar o worker de fundo durante testes |
 
 ---
@@ -333,7 +385,7 @@ docker compose down
 O projeto adota **Test-Driven Development (TDD)** com mocks abrangentes para permitir execução ágil sem depender da infraestrutura externa da Oracle:
 
 ```bash
-# Executar todos os testes unitários (41 testes cobrindo collector, api, cache, config e observabilidade)
+# Executar todos os testes unitários (53 testes cobrindo collector, api, cache, auth, rate limiting e observabilidade)
 .venv/bin/pytest backend/tests/ -v
 
 # Executar testes End-to-End contra a stack conteinerizada
@@ -344,5 +396,7 @@ O projeto adota **Test-Driven Development (TDD)** com mocks abrangentes para per
 
 ## 🔒 Segurança de Credenciais & Resolução de Chaves
 
-* O container do backend monta `~/.oci` e `~/.ssh` em modo **somente leitura** (`:ro`), garantindo que nenhuma alteração seja feita nas suas chaves do host.
-* O módulo `config.py` implementa normalização defensiva do campo `key_file`: resolve automaticamente referências como `~` e ajusta caminhos absolutos do host para o contexto interno do container (`/root/.oci` ou `/root/.ssh`).
+* O contêiner do backend executa como usuário **não-privilegiado** (`appuser`, UID `1000:1000`) em conformidade com o **Kubernetes Pod Security Standard (Restricted)**.
+* No Docker Compose, monta `~/.oci` e `~/.ssh` em modo **somente leitura** (`:ro`) em `/home/appuser/.oci` e `/etc/oci`.
+* No Kubernetes, consome as credenciais montadas em `/secrets/oci` através de um Kubernetes Secret.
+* O módulo `config.py` implementa normalização defensiva do campo `key_file`: resolve automaticamente referências como `~` e ajusta caminhos absolutos do host para o contexto interno do contêiner (`/secrets/oci`, `/home/appuser/.oci` ou `/etc/oci`).

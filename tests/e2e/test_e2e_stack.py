@@ -93,10 +93,13 @@ async def test_e2e_kubernetes_probes():
             startup_resp = await client.get(f"{BACKEND_URL}/startupz")
             assert startup_resp.status_code in [200, 503]
 
-            # Frontend proxy checks
+            # Frontend pod health check endpoint
+            fe_health = await client.get(f"{FRONTEND_URL}/nginx-health")
+            assert fe_health.status_code == 200
+
+            # Frontend proxy blocks internal probes from public exposure on portfolio domain
             fe_live = await client.get(f"{FRONTEND_URL}/livez")
-            assert fe_live.status_code == 200
-            assert fe_live.json()["status"] == "alive"
+            assert fe_live.status_code == 404
         except httpx.ConnectError:
             pytest.skip("Stack not running for E2E probe validation")
 
@@ -112,10 +115,9 @@ async def test_e2e_prometheus_metrics():
             assert "http_requests_total" in resp.text
             assert "oci_storage_block_limit_gb" in resp.text
 
-            # Test via frontend proxy
+            # Frontend proxy blocks internal metrics from public exposure on portfolio domain
             fe_resp = await client.get(f"{FRONTEND_URL}/metrics")
-            assert fe_resp.status_code == 200
-            assert "text/plain" in fe_resp.headers["content-type"]
+            assert fe_resp.status_code == 404
         except httpx.ConnectError:
             pytest.skip("Stack not running for E2E metrics validation")
 

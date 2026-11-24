@@ -49,6 +49,8 @@ services:
       - ADMIN_USERNAME=admin
       - ADMIN_PASSWORD=admin
       - PERSISTENT_DATA_DIR=/app/data
+      - SESSION_COOKIE_SECURE=false
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-local-dev-jwt-secret-replace-in-production}
     volumes:
       - ${HOME}/.oci:/home/appuser/.oci:ro
       - ${HOME}/.ssh:/home/appuser/.ssh:ro
