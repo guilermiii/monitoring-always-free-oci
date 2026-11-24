@@ -4,7 +4,11 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    SESSION_COOKIE_SECURE=true \
+    OCI_CONFIG_FILE=/secrets/oci/config \
+    PORTFOLIO_MODE=true \
+    PERSISTENT_DATA_DIR=/app/data
 
 # Install runtime dependencies only (curl for container healthcheck)
 RUN apk add --no-cache curl
