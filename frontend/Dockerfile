@@ -12,6 +12,9 @@ RUN npm run build
 # Stage 2: Serve with Nginx
 FROM nginx:alpine
 
+# Upgrade Alpine base packages to prevent OS CVEs
+RUN apk update && apk upgrade --no-cache
+
 ENV BACKEND_HOST=backend \
     BACKEND_PORT=8000 \
     NAMESERVER=127.0.0.11 \

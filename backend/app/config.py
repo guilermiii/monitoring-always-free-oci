@@ -48,6 +48,10 @@ def normalize_key_path(key_path: str) -> str:
         candidate = os.path.join(fallback_dir, basename)
         if os.path.isfile(candidate):
             return os.path.abspath(candidate)
+        # Also check standard key name oci_api_key.pem in fallback dirs (e.g. Kubernetes Secret volume)
+        standard_candidate = os.path.join(fallback_dir, "oci_api_key.pem")
+        if os.path.isfile(standard_candidate):
+            return os.path.abspath(standard_candidate)
 
     # 4. If not found, raise detailed FileNotFoundError
     checked_locations = [expanded] + [os.path.join(d, basename) for d in FALLBACK_DIRS]
@@ -109,8 +113,18 @@ def load_oci_config(
     return config_dict
 
 
+def normalize_redis_url(url: str) -> str:
+    """Ensures Redis URL has a valid scheme prefix (redis://, rediss://, unix://)."""
+    if not url:
+        return "redis://redis:6379/0"
+    url = url.strip()
+    if not (url.startswith("redis://") or url.startswith("rediss://") or url.startswith("unix://")):
+        url = f"redis://{url}"
+    return url
+
+
 # Global application settings
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = normalize_redis_url(os.getenv("REDIS_URL", "redis://redis:6379/0"))
 REFRESH_INTERVAL_SECONDS = int(os.getenv("REFRESH_INTERVAL_SECONDS", "600"))  # 10 minutes
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "900"))  # 15 minutes
 OCI_API_DAILY_LIMIT = int(os.getenv("OCI_API_DAILY_LIMIT", "10000"))
