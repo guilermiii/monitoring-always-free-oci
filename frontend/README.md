@@ -15,7 +15,7 @@ Imagem conteinerizada de alta performance contendo o dashboard Single Page Appli
 * **Dashboard Visual Responsivo:** Visualização elegante de quotas e inventários da Oracle Cloud (Compute Ampere A1, AMD Micro, Volumes de Bloco, Object Storage, VCNs, IPs públicos e Bancos Autônomos).
 * **Alertas Visuais em Destaque:** Alertas instantâneos para Boot/Block Volumes órfãos e IPs fixos não alocados (evitando cobranças ou desperdícios).
 * **Trava de Acesso & Modo Portfólio:** Suporte a visualização pública anonimizada (`/portfolio`) e painel de login administrativo integrado.
-* **Resolução Dinâmica de DNS Upstream:** Script inteligente em `/docker-entrypoint.d/15-set-resolver.sh` que detecta automaticamente o nameserver do cluster a partir de `/etc/resolv.conf`, prevenindo falhas de `CrashLoopBackOff` durante a inicialização em Kubernetes.
+* **Resolução Dinâmica de DNS Upstream:** Script inteligente em `/docker-entrypoint.d/15-set-resolver.envsh` que detecta automaticamente o nameserver do cluster a partir de `/etc/resolv.conf`, prevenindo falhas de `CrashLoopBackOff` durante a inicialização em Kubernetes.
 * **Cabeçalhos de Segurança HTTP:** Proteção nativa com `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection`, `Referrer-Policy` e `Content-Security-Policy`.
 * **Blindagem de Métricas Internas:** Bloqueia automaticamente acessos externos públicos indesejados a rotas de métricas Prometheus e probes internas (`deny all; return 404;`).
 * **Probe de Saúde Nativa:** Endpoint dedicado `GET /nginx-health` retornando `200 OK` para checagem do pod pelo Kubernetes.

@@ -14,11 +14,12 @@ FROM nginx:alpine
 
 ENV BACKEND_HOST=backend \
     BACKEND_PORT=8000 \
-    NGINX_ENVSUBST_FILTER="BACKEND_HOST BACKEND_PORT NAMESERVER"
+    NAMESERVER=127.0.0.11 \
+    NGINX_ENVSUBST_FILTER="BACKEND_|NAMESERVER"
 
 # Detect DNS nameserver from /etc/resolv.conf before envsubst runs
-RUN printf '#!/bin/sh\nexport NAMESERVER=$(awk '"'"'/nameserver/ {print $2; exit}'"'"' /etc/resolv.conf 2>/dev/null || echo "127.0.0.11")\n[ -z "$NAMESERVER" ] && export NAMESERVER="127.0.0.11"\n' > /docker-entrypoint.d/15-set-resolver.sh && \
-    chmod +x /docker-entrypoint.d/15-set-resolver.sh
+RUN printf '#!/bin/sh\nNS=$(awk '"'"'/nameserver/ {print $2; exit}'"'"' /etc/resolv.conf 2>/dev/null || true)\nexport NAMESERVER="${NS:-127.0.0.11}"\n' > /docker-entrypoint.d/15-set-resolver.envsh && \
+    chmod +x /docker-entrypoint.d/15-set-resolver.envsh
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/templates/default.conf.template
